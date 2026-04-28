@@ -3,13 +3,14 @@
 
   const STAGE = Object.freeze({ width: 1600, height: 900, aspect: 16 / 9 });
   const MAX_DEVICE_PIXEL_RATIO = 2;
+  const STATIC_PULSE = 1.35;
 
   const LAYOUT = Object.freeze({
     panel: { x: 48, y: 174, width: 1504, height: 132, chamfer: 28 },
     lane: {
       y: 241,
       inset: 172,
-      spacing: 9.6,
+      spacing: 13.2,
       exclusions: [
         { centerX: 158, radius: 58 },
         { centerX: STAGE.width - 158, radius: 58 },
@@ -20,28 +21,29 @@
     bikeY: 241,
     targetCenterX: STAGE.width / 2,
     target: {
-      outerRadius: 47,
-      outerSpacing: 7.2,
+      outerRadius: 39,
+      outerSpacing: 6.8,
       outerDotRadius: 1.65,
-      innerRadius: 26,
+      innerRadius: 21,
       innerLineWidth: 4.4,
-      laneClearance: 8,
+      outerLaneClearance: 14,
+      innerLaneClearance: 11,
     },
-    alerts: [
-      { x: 384, count: 4, level: "level2" },
-      { x: 566, count: 3, level: "level5" },
-      { x: 1034, count: 3, level: "level5" },
-      { x: 1244, count: 3, level: "level2" },
-    ],
-    purpleColumn: { top: 331, rowGap: 28, rows: 18, columns: 9, colGap: 7.5 },
+    powerColumn: { top: 331, rowGap: 28, rows: 18, columns: 9, colGap: 7.5 },
   });
 
   const STATES = Object.freeze({
+    off: { alpha: 0, glow: 0 },
     level1: { alpha: 0.16, glow: 0.35 },
     level2: { alpha: 0.34, glow: 0.55 },
     level3: { alpha: 0.55, glow: 0.85 },
     level4: { alpha: 0.78, glow: 1.25 },
     level5: { alpha: 1, glow: 1.95 },
+    level6: { alpha: 1, glow: 2.2 },
+    level7: { alpha: 1, glow: 2.45 },
+    level8: { alpha: 1, glow: 2.7 },
+    level9: { alpha: 1, glow: 2.95 },
+    level10: { alpha: 1, glow: 3.2 },
   });
 
   const COLORS = Object.freeze({
@@ -51,6 +53,37 @@
     red: "#ff433e",
     purple: "#8b32ff",
     violetWhite: "#f0dbff",
+    wall: "#f6fbff",
+  });
+
+  const STATE_TOOLS = window.LedDefenseState ?? Object.freeze({
+    DISPLAY_MODES: { TARGET: "target", FOV: "fov" },
+    GAME: {
+      displayPadding: 2,
+      displaySlots: 88,
+      enemyWidth: 4,
+      gameOverAllBlinkMs: 560,
+      gameOverEnemyBlinkMs: 3000,
+      gameOverResetPauseMs: 700,
+      maxDistance: 10,
+      playerWidth: 4,
+      playfieldSlots: 84,
+    },
+    normalizeState: (value = {}) => ({
+      powerLevel: Math.max(0, Math.min(LAYOUT.powerColumn.rows, Math.round(Number(value.powerLevel ?? value.purpleLevel ?? 0)))),
+      enemies: Array.isArray(value.enemies) ? value.enemies : [],
+      playerStart: Math.max(0, Math.min(80, Math.round(Number(value.playerStart ?? 40)))),
+      displayMode: value.displayMode === "fov" ? "fov" : "target",
+      inputForces: {
+        left: Math.max(0, Math.round(Number(value.inputForces?.left ?? 0))),
+        right: Math.max(0, Math.round(Number(value.inputForces?.right ?? 0))),
+      },
+      running: Boolean(value.running),
+      gameOver: Boolean(value.gameOver),
+      gameOverStartedAt: Math.max(0, Math.round(Number(value.gameOverStartedAt ?? 0))),
+      gameOverEnemyBlinkOn: Boolean(value.gameOverEnemyBlinkOn),
+      gameOverLedState: value.gameOverLedState === "level10" || value.gameOverLedState === "off" ? value.gameOverLedState : null,
+    }),
   });
 
   const BIKE_TEMPLATE = Object.freeze({
@@ -62,7 +95,7 @@
   });
 
   const canvas = document.getElementById("led-canvas");
-  const ctx = canvas.getContext("2d", { alpha: false });
+  const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 
   if (!ctx) {
     return;
@@ -122,9 +155,9 @@
       return this;
     }
 
-    draw(context, pulse) {
+    draw(context, pulse, stateOverride = null) {
       for (const dot of this.dots) {
-        dot.draw(context, pulse);
+        dot.draw(context, pulse, stateOverride);
       }
     }
   }
@@ -136,9 +169,9 @@
       this.state = options.state ?? null;
     }
 
-    draw(context, pulse) {
+    draw(context, pulse, stateOverride = null) {
       for (const dot of this.dots) {
-        dot.draw(context, pulse, this.state);
+        dot.draw(context, pulse, stateOverride ?? this.state);
       }
     }
   }
@@ -153,8 +186,8 @@
       this.name = options.name ?? "solid-graphic";
     }
 
-    draw(context, pulse) {
-      const state = STATES[this.state] ?? STATES.level4;
+    draw(context, pulse, stateOverride = null) {
+      const state = STATES[stateOverride ?? this.state] ?? STATES.level4;
       const shimmer = 0.94 + Math.sin(pulse) * 0.06;
       const alpha = state.alpha * shimmer;
       const glow = state.glow * shimmer;
@@ -180,8 +213,9 @@
   }
 
   class LedScene {
-    constructor() {
+    constructor(options = {}) {
       this.layers = [];
+      this.stateOverride = options.stateOverride ?? null;
     }
 
     add(layer) {
@@ -192,7 +226,7 @@
     draw(context, pulse) {
       drawBackground(context);
       for (const layer of this.layers) {
-        layer.draw(context, pulse);
+        layer.draw(context, pulse, this.stateOverride);
       }
     }
   }
@@ -373,7 +407,14 @@
     });
   }
 
-  function createArrowGraphic(origin, direction = 1) {
+  function forceState(force) {
+    if (force <= 0) {
+      return "level1";
+    }
+    return `level${Math.max(5, Math.min(10, force + 4))}`;
+  }
+
+  function createArrowGraphic(origin, direction = 1, state = "level2") {
     const arm = 22;
     const halfHeight = 24;
     const points = [
@@ -385,7 +426,7 @@
       color: COLORS.blue,
       glowColor: COLORS.blue,
       lineWidth: 6,
-      state: "level5",
+      state,
       name: "arrow",
     });
   }
@@ -425,7 +466,7 @@
     return dots;
   }
 
-  function createBikeGraphic(center, mirrored = false) {
+  function createBikeGraphic(center, mirrored = false, state = "level2") {
     const baseFactory = bikeTemplateDots;
     const { bounds, scale } = BIKE_TEMPLATE;
     const origin = {
@@ -433,16 +474,25 @@
       y: (bounds.minY + bounds.maxY) / 2,
     };
     const dots = transformDots(baseFactory, { center, origin, scale, mirrored });
-    return new LedGraphic(dots, { name: "bicycle", state: "level5" });
+    return new LedGraphic(dots, { name: "bicycle", state });
   }
 
-  function createTargetGraphic(center) {
-    const { outerRadius, outerSpacing, outerDotRadius, innerRadius, innerLineWidth, laneClearance } = LAYOUT.target;
-    const redOn = { color: COLORS.red, glowColor: COLORS.red, radius: outerDotRadius, state: "level5" };
+  function createTargetGraphic(center, options = {}) {
+    const {
+      outerRadius,
+      outerSpacing,
+      outerDotRadius,
+      outerLaneClearance,
+      innerRadius,
+      innerLineWidth,
+      innerLaneClearance,
+    } = LAYOUT.target;
+    const outerState = options.outerState ?? "level5";
+    const redOn = { color: COLORS.red, glowColor: COLORS.red, radius: outerDotRadius, state: outerState };
     const dots = [
-      ...dotsOnCircleOutsideHorizontalBand(center, outerRadius, outerSpacing, laneClearance, redOn),
+      ...dotsOnCircleOutsideHorizontalBand(center, outerRadius, outerSpacing, outerLaneClearance, redOn),
     ];
-    const innerPaths = circleArcPathsOutsideHorizontalBand(center, innerRadius, laneClearance);
+    const innerPaths = circleArcPathsOutsideHorizontalBand(center, innerRadius, innerLaneClearance);
 
     return new DotCollection([
       ...dots,
@@ -456,51 +506,174 @@
     ]);
   }
 
-  function createLaneDots() {
-    const { y, inset, spacing, exclusions } = LAYOUT.lane;
+  function laneSlotXs() {
+    const { inset, spacing, exclusions } = LAYOUT.lane;
     const startX = inset;
     const endX = STAGE.width - inset;
     const length = endX - startX;
     const steps = Math.max(1, Math.round(length / spacing));
-    const dots = [];
-    const accentRanges = LAYOUT.alerts.map((alert) => {
-      const centerIndex = Math.round(((alert.x - startX) / length) * steps);
-      const startIndex = centerIndex - Math.floor((alert.count - 1) / 2);
-      return {
-        startIndex,
-        endIndex: startIndex + alert.count - 1,
-        level: alert.level,
-      };
-    });
+    const slots = [];
 
     for (let index = 0; index <= steps; index += 1) {
       const x = startX + (index / steps) * length;
-      if (exclusions.some((range) => Math.abs(x - range.centerX) <= range.radius)) {
-        continue;
+      if (!exclusions.some((range) => Math.abs(x - range.centerX) <= range.radius)) {
+        slots.push(x);
       }
+    }
 
-      const accent = accentRanges.find((range) => index >= range.startIndex && index <= range.endIndex);
+    return slots;
+  }
+
+  const LANE_SLOT_XS = laneSlotXs();
+
+  function displaySlotForField(fieldSlot) {
+    return fieldSlot + STATE_TOOLS.GAME.displayPadding;
+  }
+
+  function centerStartDisplaySlot() {
+    return Math.floor((STATE_TOOLS.GAME.displaySlots - STATE_TOOLS.GAME.playerWidth) / 2);
+  }
+
+  function slotCenterX(slot) {
+    const minSlot = 0;
+    const maxSlot = LANE_SLOT_XS.length - 1;
+    const clampedSlot = Math.max(minSlot, Math.min(maxSlot, slot));
+    const leftSlot = Math.floor(clampedSlot);
+    const rightSlot = Math.ceil(clampedSlot);
+    if (leftSlot === rightSlot) {
+      return LANE_SLOT_XS[leftSlot];
+    }
+
+    const t = clampedSlot - leftSlot;
+    return LANE_SLOT_XS[leftSlot] + (LANE_SLOT_XS[rightSlot] - LANE_SLOT_XS[leftSlot]) * t;
+  }
+
+  function distanceState(distance) {
+    const maxDistance = STATE_TOOLS.GAME.maxDistance;
+    const level = Math.max(1, Math.min(10, maxDistance - distance + 1));
+    return `level${level}`;
+  }
+
+  function isGameOverEnemy(displayState, enemy) {
+    return displayState.gameOver && enemy?.distance <= 1;
+  }
+
+  function gameOverEnemyState(displayState, enemy) {
+    if (!isGameOverEnemy(displayState, enemy)) {
+      return null;
+    }
+    return displayState.gameOverEnemyBlinkOn ? "level10" : "off";
+  }
+
+  function gameOverGlobalState(displayState) {
+    return displayState.gameOver ? displayState.gameOverLedState : null;
+  }
+
+  function enemyAtSlot(enemies, slot) {
+    const enemyWidth = STATE_TOOLS.GAME.enemyWidth;
+    return enemies.find((enemy) => slot >= enemy.start && slot < enemy.start + enemyWidth) ?? null;
+  }
+
+  function enemyOverlapsPlayer(displayState) {
+    const playerStart = displayState.playerStart;
+    const playerEnd = playerStart + STATE_TOOLS.GAME.playerWidth - 1;
+    return displayState.enemies.some((enemy) => {
+      const enemyStart = enemy.start;
+      const enemyEnd = enemy.start + STATE_TOOLS.GAME.enemyWidth - 1;
+      return enemyStart <= playerEnd && enemyEnd >= playerStart;
+    });
+  }
+
+  function targetDisplaySlot(displayState) {
+    const playerCenterOffset = (STATE_TOOLS.GAME.playerWidth - 1) / 2;
+    if (displayState.displayMode === STATE_TOOLS.DISPLAY_MODES.FOV) {
+      return centerStartDisplaySlot() + playerCenterOffset;
+    }
+
+    return displaySlotForField(displayState.playerStart) + playerCenterOffset;
+  }
+
+  function fieldSlotForDisplaySlot(displayState, displaySlot) {
+    if (displayState.displayMode === STATE_TOOLS.DISPLAY_MODES.FOV) {
+      return displayState.playerStart + displaySlot - centerStartDisplaySlot();
+    }
+
+    return displaySlot - STATE_TOOLS.GAME.displayPadding;
+  }
+
+  function fovWallAtSlot(displayState, displaySlot) {
+    if (displayState.displayMode !== STATE_TOOLS.DISPLAY_MODES.FOV) {
+      return false;
+    }
+
+    const leftWallSlot = centerStartDisplaySlot() - displayState.playerStart - 1;
+    const rightWallSlot = centerStartDisplaySlot() + STATE_TOOLS.GAME.playfieldSlots - displayState.playerStart;
+    return displaySlot === leftWallSlot || displaySlot === rightWallSlot;
+  }
+
+  function fovOffscreenDirection(displayState) {
+    if (displayState.displayMode !== STATE_TOOLS.DISPLAY_MODES.FOV) {
+      return { left: false, right: false };
+    }
+
+    const leftLimit = 1;
+    const rightLimit = STATE_TOOLS.GAME.displaySlots - 2;
+    const startSlot = centerStartDisplaySlot();
+    const enemyWidth = STATE_TOOLS.GAME.enemyWidth;
+    const direction = { left: false, right: false };
+
+    for (const enemy of displayState.enemies) {
+      const enemyLeft = startSlot + enemy.start - displayState.playerStart;
+      const enemyRight = enemyLeft + enemyWidth - 1;
+      if (enemyRight < leftLimit) direction.left = true;
+      if (enemyLeft > rightLimit) direction.right = true;
+    }
+
+    return direction;
+  }
+
+  function createLaneDots(displayState) {
+    const { y } = LAYOUT.lane;
+    const dots = [];
+    const offscreen = fovOffscreenDirection(displayState);
+
+    for (let slot = 0; slot < LANE_SLOT_XS.length; slot += 1) {
+      const x = LANE_SLOT_XS[slot];
+      const fieldSlot = fieldSlotForDisplaySlot(displayState, slot);
+      const enemy = fieldSlot >= 0 && fieldSlot < STATE_TOOLS.GAME.playfieldSlots
+        ? enemyAtSlot(displayState.enemies, fieldSlot)
+        : null;
+      const wall = fovWallAtSlot(displayState, slot);
+      const offscreenMarker = displayState.displayMode === STATE_TOOLS.DISPLAY_MODES.FOV
+        && ((slot === 0 && offscreen.left) || (slot === LANE_SLOT_XS.length - 1 && offscreen.right));
+      const activeEnemy = Boolean(enemy || offscreenMarker);
+      const dotColor = wall ? COLORS.wall : (activeEnemy ? COLORS.red : COLORS.laneOff);
+      const dotGlow = wall ? COLORS.wall : (activeEnemy ? COLORS.red : COLORS.laneOff);
+      const gameOverEnemyLedState = enemy ? gameOverEnemyState(displayState, enemy) : null;
       dots.push(dot(x, y, {
-        color: accent ? COLORS.red : COLORS.laneOff,
-        glowColor: accent ? COLORS.red : COLORS.laneOff,
-        radius: accent ? 2.35 : 1.72,
-        state: accent ? accent.level : "level2",
-        phase: index * 0.08,
+        color: dotColor,
+        glowColor: dotGlow,
+        radius: activeEnemy || wall ? 2.9 : 2.25,
+        state: gameOverEnemyLedState
+          ?? (wall ? "level10" : (activeEnemy ? (enemy ? distanceState(enemy.distance) : (blinkOn ? "level10" : "level3")) : "level2")),
+        phase: slot * 0.08,
       }));
     }
 
     return new DotCollection(dots);
   }
 
-  function createPurpleColumn() {
+  function createPowerColumn(displayState) {
     const dots = [];
     const x = LAYOUT.targetCenterX;
-    const { top, rowGap, rows, columns, colGap } = LAYOUT.purpleColumn;
+    const { top, rowGap, rows, columns, colGap } = LAYOUT.powerColumn;
     const halfWidth = ((columns - 1) * colGap) / 2;
+    const powerLevel = Math.max(0, Math.min(rows, displayState.powerLevel));
 
     for (let row = 0; row < rows; row += 1) {
       const y = top + row * rowGap;
-      const state = row < 3 ? "level3" : "level5";
+      const filled = row >= rows - powerLevel;
+      const state = filled ? (row < 3 ? "level3" : "level5") : "off";
       const color = row < 3 ? COLORS.purple : COLORS.violetWhite;
       for (let col = 0; col < columns; col += 1) {
         dots.push(dot(x - halfWidth + col * colGap, y, {
@@ -517,27 +690,38 @@
       color: COLORS.violetWhite,
       glowColor: COLORS.purple,
       radius: 5,
-      state: "level5",
+      state: powerLevel > 0 ? "level5" : "off",
     }));
 
     return new DotCollection(dots);
   }
 
-  function createScene() {
-    const scene = new LedScene();
+  function createScene(displayState) {
+    const scene = new LedScene({ stateOverride: gameOverGlobalState(displayState) });
     const blueDots = { color: COLORS.blue, glowColor: COLORS.blue, radius: 1.85, state: "level5" };
     const centerLineY = LAYOUT.lane.y;
+    const leftForce = displayState.inputForces.left;
+    const rightForce = displayState.inputForces.right;
+    const netForce = rightForce - leftForce;
+    const leftArrowState = netForce < 0 ? forceState(Math.abs(netForce)) : "level1";
+    const rightArrowState = netForce > 0 ? forceState(netForce) : "level1";
+    const targetOuterState = !displayState.gameOver && enemyOverlapsPlayer(displayState)
+      ? (blinkOn ? "level10" : "level1")
+      : "level5";
 
     scene.add(new DotCollection(chamferedRectDots(LAYOUT.panel, LAYOUT.panel.chamfer, 9.7, blueDots)));
-    scene.add(createLaneDots());
+    scene.add(createLaneDots(displayState));
 
-    scene.add(createArrowGraphic({ x: LAYOUT.arrowTipInset, y: centerLineY }, -1));
-    scene.add(createArrowGraphic({ x: STAGE.width - LAYOUT.arrowTipInset, y: centerLineY }, 1));
-    scene.add(createBikeGraphic({ x: LAYOUT.bikeInset, y: LAYOUT.bikeY }, false));
-    scene.add(createBikeGraphic({ x: STAGE.width - LAYOUT.bikeInset, y: LAYOUT.bikeY }, false));
+    scene.add(createArrowGraphic({ x: LAYOUT.arrowTipInset, y: centerLineY }, -1, leftArrowState));
+    scene.add(createArrowGraphic({ x: STAGE.width - LAYOUT.arrowTipInset, y: centerLineY }, 1, rightArrowState));
+    scene.add(createBikeGraphic({ x: LAYOUT.bikeInset, y: LAYOUT.bikeY }, true, forceState(leftForce)));
+    scene.add(createBikeGraphic({ x: STAGE.width - LAYOUT.bikeInset, y: LAYOUT.bikeY }, false, forceState(rightForce)));
 
-    scene.add(createTargetGraphic({ x: LAYOUT.targetCenterX, y: centerLineY }));
-    scene.add(createPurpleColumn());
+    scene.add(createTargetGraphic(
+      { x: slotCenterX(targetDisplaySlot(displayState)), y: centerLineY },
+      { outerState: targetOuterState }
+    ));
+    scene.add(createPowerColumn(displayState));
 
     return scene;
   }
@@ -561,17 +745,7 @@
     context.fillRect(0, 0, STAGE.width, STAGE.height);
   }
 
-  function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO);
-    canvas.width = Math.round(window.innerWidth * dpr);
-    canvas.height = Math.round(window.innerHeight * dpr);
-    canvas.style.width = `${window.innerWidth}px`;
-    canvas.style.height = `${window.innerHeight}px`;
-  }
-
-  function withLetterboxedStage(context, render) {
-    const viewportWidth = canvas.width;
-    const viewportHeight = canvas.height;
+  function getLetterboxMetrics(viewportWidth, viewportHeight) {
     const viewportAspect = viewportWidth / viewportHeight;
     const scale = viewportAspect > STAGE.aspect
       ? viewportHeight / STAGE.height
@@ -581,26 +755,127 @@
     const offsetX = (viewportWidth - stageWidth) / 2;
     const offsetY = (viewportHeight - stageHeight) / 2;
 
-    context.save();
+    return { offsetX, offsetY, scale, stageWidth, stageHeight };
+  }
+
+  function createRenderCanvas(width, height) {
+    if (typeof OffscreenCanvas === "function") {
+      return new OffscreenCanvas(width, height);
+    }
+
+    const renderCanvas = document.createElement("canvas");
+    renderCanvas.width = width;
+    renderCanvas.height = height;
+    return renderCanvas;
+  }
+
+  function createStageCache(scene) {
+    const renderCanvas = createRenderCanvas(STAGE.width, STAGE.height);
+    const renderContext = renderCanvas.getContext("2d", { alpha: false });
+
+    scene.draw(renderContext, STATIC_PULSE);
+
+    return renderCanvas;
+  }
+
+  function drawCachedStage(context, cache) {
+    const viewportWidth = canvas.width;
+    const viewportHeight = canvas.height;
+    const metrics = getLetterboxMetrics(viewportWidth, viewportHeight);
+
     context.clearRect(0, 0, viewportWidth, viewportHeight);
     context.fillStyle = "#000";
     context.fillRect(0, 0, viewportWidth, viewportHeight);
-    context.translate(offsetX, offsetY);
-    context.scale(scale, scale);
-    render();
-    context.restore();
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(cache, metrics.offsetX, metrics.offsetY, metrics.stageWidth, metrics.stageHeight);
   }
 
-  const scene = createScene();
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO);
+    const nextWidth = Math.round(window.innerWidth * dpr);
+    const nextHeight = Math.round(window.innerHeight * dpr);
+    if (canvas.width !== nextWidth) {
+      canvas.width = nextWidth;
+    }
+    if (canvas.height !== nextHeight) {
+      canvas.height = nextHeight;
+    }
+    canvas.style.width = `${window.innerWidth}px`;
+    canvas.style.height = `${window.innerHeight}px`;
 
-  function frame(now) {
-    withLetterboxedStage(ctx, () => {
-      scene.draw(ctx, now / 620);
+    drawCachedStage(ctx, stageCache);
+  }
+
+  function redrawDisplay() {
+    stageCache = createStageCache(createScene(displayState));
+    drawCachedStage(ctx, stageCache);
+  }
+
+  function updateBlinkTimer() {
+    const offscreen = fovOffscreenDirection(displayState);
+    const needsBlink = (!displayState.gameOver && enemyOverlapsPlayer(displayState))
+      || (displayState.displayMode === STATE_TOOLS.DISPLAY_MODES.FOV && (offscreen.left || offscreen.right));
+    const nextDelay = 420;
+
+    if (needsBlink && blinkTimer && blinkTimerDelay !== nextDelay) {
+      window.clearInterval(blinkTimer);
+      blinkTimer = null;
+    }
+
+    if (needsBlink && !blinkTimer) {
+      blinkTimerDelay = nextDelay;
+      blinkTimer = window.setInterval(() => {
+        blinkOn = !blinkOn;
+        redrawDisplay();
+      }, nextDelay);
+      return;
+    }
+
+    if (!needsBlink && blinkTimer) {
+      window.clearInterval(blinkTimer);
+      blinkTimer = null;
+      blinkTimerDelay = 0;
+      blinkOn = true;
+    }
+  }
+
+  function renderDisplay(nextState) {
+    const nextDisplayState = STATE_TOOLS.normalizeState(nextState);
+    const nextStateKey = JSON.stringify(nextDisplayState);
+    if (nextStateKey === lastRenderedStateKey) {
+      return;
+    }
+
+    displayState = nextDisplayState;
+    lastRenderedStateKey = nextStateKey;
+    updateBlinkTimer();
+    redrawDisplay();
+  }
+
+  function connectStateStream() {
+    if (typeof EventSource !== "function") {
+      return;
+    }
+
+    const events = new EventSource("/events");
+    events.addEventListener("message", (event) => {
+      try {
+        renderDisplay(JSON.parse(event.data));
+      } catch (error) {
+        console.error("Invalid display state", error);
+      }
     });
-    requestAnimationFrame(frame);
   }
+
+  let displayState = STATE_TOOLS.normalizeState();
+  let blinkOn = true;
+  let blinkTimer = null;
+  let blinkTimerDelay = 0;
+  let stageCache = createStageCache(createScene(displayState));
+  let lastRenderedStateKey = JSON.stringify(displayState);
 
   window.addEventListener("resize", resize);
   resize();
-  requestAnimationFrame(frame);
+  connectStateStream();
 })();

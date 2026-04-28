@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LED Defense Controller</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="controller.css">
+  </head>
+  <body>
+    <main class="controller-shell">
+      <section class="control-panel" aria-labelledby="controller-title">
+        <header class="panel-header">
+          <div>
+            <h1 id="controller-title">LED Defense Controller</h1>
+            <p>Display state controls</p>
+          </div>
+          <a class="display-link" href="/display" target="_blank" rel="noreferrer">Open Display</a>
+        </header>
+
+        <div class="control-row compact-row">
+          <label for="display-mode">Display mode</label>
+          <select id="display-mode">
+            <option value="target">Mode A - Moving Target</option>
+            <option value="fov">Mode B - Player FOV</option>
+          </select>
+        </div>
+
+        <div class="actions">
+          <button id="move-left" type="button">Left</button>
+          <button id="move-right" type="button">Right</button>
+          <button id="charge-power" class="power-button" type="button" aria-pressed="false">Charge</button>
+          <button id="spawn-enemy" type="button">Spawn Enemy</button>
+          <button id="stop-game" type="button">Stop Game</button>
+          <button id="reset-state" type="button">Reset State</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="state.js"></script>
+    <script src="controller.js"></script>
+  </body>
+</html>
