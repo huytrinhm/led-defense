@@ -18,6 +18,10 @@ body {
   height: 100vh;
   display: block;
   background: #000;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .speaker-dialog {

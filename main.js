@@ -2329,8 +2329,23 @@
       || element.webkitRequestFullscreen
       || element.msRequestFullscreen;
     if (request) {
-      request.call(element).catch?.(() => {});
+      try {
+        request.call(element, Element.ALLOW_KEYBOARD_INPUT).catch?.(() => {});
+      } catch (error) {
+        try {
+          request.call(element).catch?.(() => {});
+        } catch (nestedError) {
+          // Fullscreen is best-effort; older iOS Safari does not support arbitrary elements.
+        }
+      }
     }
+  }
+
+  function fullscreenTarget() {
+    const canvasRequest = canvas.requestFullscreen
+      || canvas.webkitRequestFullscreen
+      || canvas.msRequestFullscreen;
+    return canvasRequest ? canvas : document.documentElement;
   }
 
   function exitFullscreen() {
@@ -2338,7 +2353,11 @@
       || document.webkitExitFullscreen
       || document.msExitFullscreen;
     if (exit) {
-      exit.call(document).catch?.(() => {});
+      try {
+        exit.call(document).catch?.(() => {});
+      } catch (error) {
+        // Ignore unsupported fullscreen exits.
+      }
     }
   }
 
@@ -2347,7 +2366,30 @@
       exitFullscreen();
       return;
     }
-    requestFullscreen(document.documentElement);
+    requestFullscreen(fullscreenTarget());
+  }
+
+  function registerCanvasTap(clientX, clientY) {
+    const now = Date.now();
+    const closeInTime = now - lastCanvasTapAt < 340;
+    const closeInSpace = Math.hypot(clientX - lastCanvasTapX, clientY - lastCanvasTapY) < 42;
+    lastCanvasTapAt = now;
+    lastCanvasTapX = clientX;
+    lastCanvasTapY = clientY;
+    return closeInTime && closeInSpace;
+  }
+
+  function toggleFullscreenFromGesture(event) {
+    const now = Date.now();
+    if (now - lastFullscreenToggleAt < 500) {
+      event.preventDefault();
+      return;
+    }
+
+    lastFullscreenToggleAt = now;
+    lastCanvasTapAt = 0;
+    event.preventDefault();
+    toggleFullscreen();
   }
 
   function handleCanvasPointerUp(event) {
@@ -2355,16 +2397,19 @@
       return;
     }
 
-    const now = Date.now();
-    const closeInTime = now - lastCanvasTapAt < 340;
-    const closeInSpace = Math.hypot(event.clientX - lastCanvasTapX, event.clientY - lastCanvasTapY) < 42;
-    lastCanvasTapAt = now;
-    lastCanvasTapX = event.clientX;
-    lastCanvasTapY = event.clientY;
-    if (closeInTime && closeInSpace) {
-      event.preventDefault();
-      lastCanvasTapAt = 0;
-      toggleFullscreen();
+    if (registerCanvasTap(event.clientX, event.clientY)) {
+      toggleFullscreenFromGesture(event);
+    }
+  }
+
+  function handleCanvasTouchEnd(event) {
+    const touch = event.changedTouches?.[0];
+    if (!touch) {
+      return;
+    }
+
+    if (registerCanvasTap(touch.clientX, touch.clientY)) {
+      toggleFullscreenFromGesture(event);
     }
   }
 
@@ -2388,6 +2433,7 @@
   let lastCanvasTapAt = 0;
   let lastCanvasTapX = 0;
   let lastCanvasTapY = 0;
+  let lastFullscreenToggleAt = 0;
   const displayAudio = new DisplayAudio();
   let stageCache = null;
   let stageCacheDirty = true;
@@ -2401,6 +2447,7 @@
     toggleFullscreen();
   });
   canvas.addEventListener("pointerup", handleCanvasPointerUp);
+  canvas.addEventListener("touchend", handleCanvasTouchEnd, { passive: false });
   speakerLeftButton?.addEventListener("click", () => chooseSpeaker("left"));
   speakerStereoButton?.addEventListener("click", () => chooseSpeaker("stereo"));
   speakerRightButton?.addEventListener("click", () => chooseSpeaker("right"));
