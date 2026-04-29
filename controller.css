@@ -101,6 +101,39 @@ output {
   text-align: right;
 }
 
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.status-item {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #223049;
+  border-radius: 8px;
+  background: #0c121c;
+}
+
+.status-item span {
+  color: #9cacbf;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.status-item strong {
+  overflow: hidden;
+  color: #eef4ff;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 input,
 select {
   width: 100%;
@@ -218,6 +251,10 @@ select {
 }
 
 @media (max-width: 760px) {
+  .status-grid {
+    grid-template-columns: 1fr;
+  }
+
   .config-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

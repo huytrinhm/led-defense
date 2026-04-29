@@ -93,8 +93,32 @@ function parseJsonBody(request) {
   });
 }
 
-function sendState(response) {
-  response.write(`data: ${JSON.stringify(state)}\n\n`);
+function normalizeClientRole(value) {
+  if (value === "display" || value === "controller") {
+    return value;
+  }
+  return "unknown";
+}
+
+function connectedDisplayCount() {
+  let count = 0;
+  for (const client of clients) {
+    if (client.role === "display") {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function statePayload() {
+  return {
+    ...state,
+    connectedDisplayCount: connectedDisplayCount(),
+  };
+}
+
+function sendState(client) {
+  client.response.write(`data: ${JSON.stringify(statePayload())}\n\n`);
 }
 
 function broadcastState() {
@@ -679,7 +703,12 @@ function normalizeStartGameBody(body = {}) {
   };
 }
 
-function handleEvents(request, response) {
+function handleEvents(request, response, searchParams) {
+  const client = {
+    response,
+    role: normalizeClientRole(searchParams.get("role")),
+  };
+
   response.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
@@ -687,14 +716,18 @@ function handleEvents(request, response) {
     "X-Accel-Buffering": "no",
   });
   response.write(": connected\n\n");
-  sendState(response);
-  clients.add(response);
+  clients.add(client);
+  sendState(client);
+  broadcastState();
 
   const cleanup = () => {
-    clients.delete(response);
+    if (clients.delete(client)) {
+      broadcastState();
+    }
   };
   request.on("close", cleanup);
   response.on("error", cleanup);
+  response.on("close", cleanup);
 }
 
 function resolveStaticPath(urlPathname) {
@@ -811,7 +844,7 @@ const server = http.createServer((request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
 
   if (request.method === "GET" && url.pathname === "/events") {
-    handleEvents(request, response);
+    handleEvents(request, response, url.searchParams);
     return;
   }
 

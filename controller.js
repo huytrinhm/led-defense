@@ -7,6 +7,9 @@
   const gameModeSelect = document.getElementById("game-run-mode");
   const gameTimeInput = document.getElementById("game-time");
   const spawnRateInput = document.getElementById("spawn-rate");
+  const gameStatus = document.getElementById("game-status");
+  const remainingTime = document.getElementById("remaining-time");
+  const connectedDisplays = document.getElementById("connected-displays");
   const startButton = document.getElementById("start-game");
   const resetButton = document.getElementById("reset-state");
   const leftButton = document.getElementById("move-left");
@@ -16,6 +19,9 @@
   const stopButton = document.getElementById("stop-game");
   const clientId = createClientId();
   let charging = false;
+  let visualControlsDirty = false;
+  let latestStatusState = null;
+  let statusTimer = null;
 
   if (
     !stateTools
@@ -24,6 +30,9 @@
     || !gameModeSelect
     || !gameTimeInput
     || !spawnRateInput
+    || !gameStatus
+    || !remainingTime
+    || !connectedDisplays
     || !startButton
     || !resetButton
     || !leftButton
@@ -98,6 +107,97 @@
     spawnRateInput.value = String(stateTools.GAME_AUTOMATION.defaultSpawnIntervalMs / 1000);
   }
 
+  function syncVisualControls(state) {
+    if (!state || visualControlsDirty) {
+      return;
+    }
+
+    const normalizedState = stateTools.normalizeState(state);
+    modeSelect.value = normalizedState.displayMode;
+    outlineSelect.value = normalizedState.outlineEffectMode;
+  }
+
+  function formatRemainingTime(state) {
+    if (state.gameOver) {
+      return "--";
+    }
+
+    if (state.gameStarting) {
+      return "Starting";
+    }
+
+    if (!state.running) {
+      return "--";
+    }
+
+    if (!state.autoEndsAt) {
+      return "Manual";
+    }
+
+    const remainingMs = Math.max(0, state.autoEndsAt - Date.now());
+    const remainingSeconds = Math.floor(remainingMs / 1000);
+    const minutes = Math.floor(remainingSeconds / 60);
+    const seconds = remainingSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  function gameStatusText(state) {
+    if (state.gameOver) {
+      return "Game over";
+    }
+    if (state.gameStarting) {
+      return "Starting";
+    }
+    if (state.running) {
+      return "In game";
+    }
+    return "Standby";
+  }
+
+  function renderStatus() {
+    if (!latestStatusState) {
+      return;
+    }
+
+    gameStatus.textContent = gameStatusText(latestStatusState);
+    remainingTime.textContent = formatRemainingTime(latestStatusState);
+    connectedDisplays.textContent = String(Math.max(0, Number(latestStatusState.connectedDisplayCount) || 0));
+  }
+
+  function updateStatus(state) {
+    latestStatusState = {
+      ...stateTools.normalizeState(state),
+      connectedDisplayCount: state.connectedDisplayCount,
+    };
+    renderStatus();
+  }
+
+  function ensureStatusTimer() {
+    if (statusTimer) {
+      return;
+    }
+
+    statusTimer = window.setInterval(renderStatus, 1000);
+  }
+
+  function connectStateStream() {
+    if (typeof EventSource !== "function") {
+      return;
+    }
+
+    const events = new EventSource("/events?role=controller");
+    events.addEventListener("message", (event) => {
+      try {
+        const state = JSON.parse(event.data);
+        syncVisualControls(state);
+        updateStatus(state);
+      } catch (error) {
+        console.error("Invalid controller state", error);
+      }
+    });
+    ensureStatusTimer();
+  }
+
   function startGame() {
     releasePower();
     postJson("/api/game/start", {
@@ -118,14 +218,20 @@
   });
 
   modeSelect.addEventListener("change", () => {
+    visualControlsDirty = true;
     postJson("/api/display-mode", { displayMode: modeSelect.value }).catch((error) => {
       console.error("Unable to update display mode", error);
+    }).finally(() => {
+      visualControlsDirty = false;
     });
   });
 
   outlineSelect.addEventListener("change", () => {
+    visualControlsDirty = true;
     postJson("/api/outline-effect", { outlineEffectMode: outlineSelect.value }).catch((error) => {
       console.error("Unable to update outline effect", error);
+    }).finally(() => {
+      visualControlsDirty = false;
     });
   });
 
@@ -185,4 +291,6 @@
   window.addEventListener("beforeunload", () => {
     releasePower({ keepalive: true });
   });
+
+  connectStateStream();
 })();

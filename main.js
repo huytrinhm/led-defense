@@ -2119,7 +2119,7 @@
       return;
     }
 
-    const events = new EventSource("/events");
+    const events = new EventSource("/events?role=display");
     events.addEventListener("message", (event) => {
       try {
         renderDisplay(JSON.parse(event.data));
