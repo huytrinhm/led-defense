@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "check": "node --check state.js && node --check server.js && node --check main.js && node --check controller.js && node --check simple-controller.js",
+    "check": "node --check state.js && node --check server.js && node --check main.js && node --check control-input.js && node --check controller.js && node --check simple-controller.js",
     "start": "node server.js"
   }
 }
