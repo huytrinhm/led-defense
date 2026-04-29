@@ -35,16 +35,18 @@
   const DIRTY_REPAINT_PADDING = 48;
   const AUDIO = Object.freeze({
     chargeFadeMs: 90,
-    chargeVolume: 0.055,
+    chargeVolume: 0.09,
     enemyTickMaxMs: 1050,
     enemyTickMinMs: 120,
-    enemyTickVolume: 0.075,
-    enemyTickMinSpeakerGain: 0.16,
-    enemyTickPanWidth: 28,
-    gameStartVolume: 0.105,
-    gameOverVolume: 0.13,
-    masterVolume: 0.72,
-    shootVolume: 0.18,
+    enemyTickVolume: 0.14,
+    enemyTickMinSpeakerGain: 0.08,
+    enemyTickPanPower: 1.65,
+    enemyTickPanWidth: 22,
+    enemyTickStereoDistanceDrop: 0.46,
+    gameStartVolume: 0.18,
+    gameOverVolume: 0.22,
+    masterVolume: 0.92,
+    shootVolume: 0.31,
   });
 
   const LAYOUT = Object.freeze({
@@ -462,8 +464,9 @@
       }
 
       const pan = this.enemyPan();
-      const panAngle = (pan + 1) * Math.PI * 0.25;
-      const sideGain = this.speakerRole === "left" ? Math.cos(panAngle) : Math.sin(panAngle);
+      const sourceSide = this.speakerRole === "left" ? -1 : 1;
+      const sourceDistance = Math.abs(pan - sourceSide) / 2;
+      const sideGain = Math.pow(1 - Math.max(0, Math.min(1, sourceDistance)), AUDIO.enemyTickPanPower);
       return Math.max(AUDIO.enemyTickMinSpeakerGain, sideGain * this.enemyDistanceGain());
     }
 
@@ -484,7 +487,7 @@
 
       const fieldHalf = Math.max(1, (STATE_TOOLS.GAME.playfieldSlots ?? 88) / 2);
       const distance = Math.min(fieldHalf, Math.abs(spatial.relativeToPlayer));
-      return 1 - 0.32 * (distance / fieldHalf);
+      return 1 - AUDIO.enemyTickStereoDistanceDrop * (distance / fieldHalf);
     }
 
     playGameOverTune() {

@@ -50,7 +50,7 @@
   });
   const GAME_AUTOMATION = Object.freeze({
     defaultDurationMs: 120000,
-    defaultMode: GAME_RUN_MODES.MANUAL,
+    defaultMode: GAME_RUN_MODES.AUTO,
     defaultSpawnIntervalMs: 7000,
     maxDurationMs: 10 * 60 * 1000,
     maxSpawnIntervalMs: 15000,

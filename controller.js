@@ -99,12 +99,20 @@
   gameTimeInput.value = String(stateTools.GAME_AUTOMATION.defaultDurationMs / 1000);
   spawnRateInput.value = String(stateTools.GAME_AUTOMATION.defaultSpawnIntervalMs / 1000);
 
-  function resetControlValues() {
+  function resetVisualControlValues() {
     modeSelect.value = stateTools.DEFAULT_STATE.displayMode;
     outlineSelect.value = stateTools.DEFAULT_STATE.outlineEffectMode;
+  }
+
+  function resetGameConfigValues() {
     gameModeSelect.value = stateTools.GAME_AUTOMATION.defaultMode;
     gameTimeInput.value = String(stateTools.GAME_AUTOMATION.defaultDurationMs / 1000);
     spawnRateInput.value = String(stateTools.GAME_AUTOMATION.defaultSpawnIntervalMs / 1000);
+  }
+
+  function resetControlValues() {
+    resetVisualControlValues();
+    resetGameConfigValues();
   }
 
   function syncVisualControls(state) {
@@ -201,8 +209,10 @@
   function startGame() {
     releasePower();
     postJson("/api/game/start", {
+      displayMode: modeSelect.value,
       durationSeconds: Number(gameTimeInput.value),
       mode: gameModeSelect.value,
+      outlineEffectMode: outlineSelect.value,
       spawnIntervalSeconds: Number(spawnRateInput.value),
     }).catch((error) => {
       console.error("Unable to start game", error);
@@ -281,7 +291,6 @@
 
   stopButton.addEventListener("click", () => {
     releasePower();
-    resetControlValues();
     postJson("/api/game/stop", {}).catch((error) => {
       console.error("Unable to stop game", error);
     });

@@ -227,7 +227,7 @@ function setState(nextState) {
   broadcastState();
 }
 
-function resetState() {
+function resetStateTo(nextState) {
   stopGameOverAnimationTimers();
   stopShotAnimationTimers();
   stopGameStartTimer();
@@ -237,7 +237,21 @@ function resetState() {
   resetPowerInput();
   manualGameActive = false;
   nextEnemyId = 1;
-  setState(DEFAULT_STATE);
+  setState(nextState);
+}
+
+function resetState() {
+  resetStateTo(DEFAULT_STATE);
+}
+
+function resetGameState(visualSettings = {}) {
+  const displayMode = normalizeDisplayMode(visualSettings.displayMode ?? state.displayMode);
+  const outlineEffectMode = normalizeOutlineEffectMode(visualSettings.outlineEffectMode ?? state.outlineEffectMode);
+  resetStateTo({
+    ...DEFAULT_STATE,
+    displayMode,
+    outlineEffectMode,
+  });
 }
 
 function updateState(patch) {
@@ -320,7 +334,7 @@ function scheduleGameOverAnimation() {
   }, GAME.gameOverEnemyBlinkMs + GAME.gameOverAllBlinkMs / 2);
 
   scheduleGameOverAnimationStep(() => {
-    resetState();
+    resetGameState();
   }, GAME.gameOverEnemyBlinkMs + GAME.gameOverAllBlinkMs + GAME.gameOverResetPauseMs);
 }
 
@@ -349,8 +363,10 @@ function startGame(config = {}) {
   const mode = normalizeGameRunMode(config.mode ?? GAME_AUTOMATION.defaultMode);
   const durationMs = clampGameDurationMs(config.durationMs);
   const spawnIntervalMs = clampSpawnIntervalMs(config.spawnIntervalMs);
+  const displayMode = normalizeDisplayMode(config.displayMode ?? state.displayMode);
+  const outlineEffectMode = normalizeOutlineEffectMode(config.outlineEffectMode ?? state.outlineEffectMode);
 
-  resetState();
+  resetGameState({ displayMode, outlineEffectMode });
   updateState({ gameStarting: true, running: false });
   gameStartTimer = setTimeout(() => {
     gameStartTimer = null;
@@ -697,8 +713,10 @@ function normalizeStartGameBody(body = {}) {
   const durationMs = body.durationMs ?? Number(body.durationSeconds) * 1000;
   const spawnIntervalMs = body.spawnIntervalMs ?? Number(body.spawnIntervalSeconds) * 1000;
   return {
+    displayMode: body.displayMode,
     durationMs,
     mode: body.mode,
+    outlineEffectMode: body.outlineEffectMode,
     spawnIntervalMs,
   };
 }
@@ -806,7 +824,7 @@ async function handleApi(request, response, urlPathname) {
   }
 
   if (urlPathname === "/api/game/stop") {
-    resetState();
+    resetGameState();
     sendEmpty(response);
     return;
   }
