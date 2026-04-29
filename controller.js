@@ -6,6 +6,7 @@
   const modeSelect = document.getElementById("display-mode");
   const outlineSelect = document.getElementById("outline-effect");
   const gameModeSelect = document.getElementById("game-run-mode");
+  const gameResultModeSelect = document.getElementById("game-result-mode");
   const gameTimeInput = document.getElementById("game-time");
   const spawnRateInput = document.getElementById("spawn-rate");
   const seedInput = document.getElementById("game-seed");
@@ -32,6 +33,7 @@
     || !modeSelect
     || !outlineSelect
     || !gameModeSelect
+    || !gameResultModeSelect
     || !gameTimeInput
     || !spawnRateInput
     || !seedInput
@@ -100,6 +102,7 @@
   modeSelect.value = stateTools.DEFAULT_STATE.displayMode;
   outlineSelect.value = stateTools.DEFAULT_STATE.outlineEffectMode;
   gameModeSelect.value = stateTools.GAME_AUTOMATION.defaultMode;
+  gameResultModeSelect.value = stateTools.DEFAULT_STATE.gameResultMode;
   gameTimeInput.value = String(stateTools.GAME_AUTOMATION.defaultDurationMs / 1000);
   spawnRateInput.value = String(stateTools.GAME_AUTOMATION.defaultSpawnIntervalMs / 1000);
   seedInput.value = stateTools.GAME_AUTOMATION.defaultSeed;
@@ -112,6 +115,7 @@
     const normalizedState = stateTools.normalizeState(state);
     modeSelect.value = normalizedState.displayMode;
     outlineSelect.value = normalizedState.outlineEffectMode;
+    gameResultModeSelect.value = normalizedState.gameResultMode;
   }
 
   function syncSeedControl(state) {
@@ -221,6 +225,7 @@
     postJson("/api/game/start", {
       displayMode: modeSelect.value,
       durationSeconds: Number(gameTimeInput.value),
+      gameResultMode: gameResultModeSelect.value,
       gameSeed: seedInput.value,
       mode: gameModeSelect.value,
       outlineEffectMode: outlineSelect.value,
@@ -243,6 +248,15 @@
     visualControlsDirty = true;
     postJson("/api/outline-effect", { outlineEffectMode: outlineSelect.value }).catch((error) => {
       console.error("Unable to update outline effect", error);
+    }).finally(() => {
+      visualControlsDirty = false;
+    });
+  });
+
+  gameResultModeSelect.addEventListener("change", () => {
+    visualControlsDirty = true;
+    postJson("/api/game-result-mode", { gameResultMode: gameResultModeSelect.value }).catch((error) => {
+      console.error("Unable to update game rule", error);
     }).finally(() => {
       visualControlsDirty = false;
     });

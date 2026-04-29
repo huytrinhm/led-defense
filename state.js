@@ -50,6 +50,10 @@
     MANUAL: "manual",
     AUTO: "auto",
   });
+  const GAME_RESULT_MODES = Object.freeze({
+    FAIL_FAST: "fail-fast",
+    PLAY_ALL: "play-all",
+  });
   const GAME_AUTOMATION = Object.freeze({
     defaultDurationMs: 120000,
     defaultMode: GAME_RUN_MODES.AUTO,
@@ -71,6 +75,8 @@
     outlineEffectMode: OUTLINE_EFFECT_MODES.SAME,
     inputForces: { left: 0, right: 0 },
     gameSeed: GAME_AUTOMATION.defaultSeed,
+    gameResultMode: GAME_RESULT_MODES.FAIL_FAST,
+    score: { hit: 0, fail: 0, total: 0 },
     gameStarting: false,
     autoEndsAt: 0,
     running: false,
@@ -98,6 +104,8 @@
       outlineEffectMode: normalizeOutlineEffectMode(value.outlineEffectMode ?? DEFAULT_STATE.outlineEffectMode),
       inputForces: normalizeInputForces(value.inputForces ?? DEFAULT_STATE.inputForces),
       gameSeed: normalizeGameSeed(value.gameSeed ?? DEFAULT_STATE.gameSeed),
+      gameResultMode: normalizeGameResultMode(value.gameResultMode ?? DEFAULT_STATE.gameResultMode),
+      score: normalizeScore(value.score ?? DEFAULT_STATE.score),
       gameStarting: Boolean(value.gameStarting),
       autoEndsAt: normalizeTimestamp(value.autoEndsAt),
       running: Boolean(value.running),
@@ -142,6 +150,10 @@
 
   function normalizeGameRunMode(value) {
     return value === GAME_RUN_MODES.AUTO ? GAME_RUN_MODES.AUTO : GAME_RUN_MODES.MANUAL;
+  }
+
+  function normalizeGameResultMode(value) {
+    return value === GAME_RESULT_MODES.PLAY_ALL ? GAME_RESULT_MODES.PLAY_ALL : GAME_RESULT_MODES.FAIL_FAST;
   }
 
   function normalizeGameSeed(value) {
@@ -211,9 +223,26 @@
     };
   }
 
+  function clampScore(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      return 0;
+    }
+    return Math.max(0, Math.min(999, Math.round(numericValue)));
+  }
+
+  function normalizeScore(value = {}) {
+    return {
+      hit: clampScore(value.hit),
+      fail: clampScore(value.fail),
+      total: clampScore(value.total),
+    };
+  }
+
   return Object.freeze({
     DISPLAY_MODES,
     GAME_AUTOMATION,
+    GAME_RESULT_MODES,
     GAME_RUN_MODES,
     OUTLINE_EFFECT_MODES,
     GAME,
@@ -230,7 +259,9 @@
     normalizeInputForces,
     normalizeDisplayMode,
     normalizeGameSeed,
+    normalizeGameResultMode,
     normalizeGameRunMode,
+    normalizeScore,
     normalizeOutlineEffectMode,
     normalizeState,
   });

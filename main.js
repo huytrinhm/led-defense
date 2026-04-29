@@ -75,6 +75,7 @@
       innerLaneClearance: 11,
     },
     powerColumn: { top: 331, rowGap: 28, rows: 18, columns: 15, colGap: 7.5 },
+    score: { x: 82, y: 92 },
     timer: { x: 1518, y: 92 },
   });
 
@@ -135,6 +136,7 @@
 
   const STATE_TOOLS = window.LedDefenseState ?? Object.freeze({
     DISPLAY_MODES: { TARGET: "target", FOV: "fov", FOV_REVERSED: "fov-reversed" },
+    GAME_RESULT_MODES: { FAIL_FAST: "fail-fast", PLAY_ALL: "play-all" },
     OUTLINE_EFFECT_MODES: { NONE: "none", SAME: "same", REVERSE: "reverse" },
     GAME: {
       displayPadding: 0,
@@ -162,10 +164,16 @@
       enemies: Array.isArray(value.enemies) ? value.enemies : [],
       playerStart: Math.max(0, Math.min(84, Math.round(Number(value.playerStart ?? 42)))),
       displayMode: value.displayMode === "fov" || value.displayMode === "fov-reversed" ? value.displayMode : "target",
+      gameResultMode: value.gameResultMode === "play-all" ? "play-all" : "fail-fast",
       outlineEffectMode: ["none", "reverse"].includes(value.outlineEffectMode) ? value.outlineEffectMode : "same",
       inputForces: {
         left: Math.max(0, Math.round(Number(value.inputForces?.left ?? 0))),
         right: Math.max(0, Math.round(Number(value.inputForces?.right ?? 0))),
+      },
+      score: {
+        hit: Math.max(0, Math.round(Number(value.score?.hit ?? 0))),
+        fail: Math.max(0, Math.round(Number(value.score?.fail ?? 0))),
+        total: Math.max(0, Math.round(Number(value.score?.total ?? 0))),
       },
       gameStarting: Boolean(value.gameStarting),
       autoEndsAt: Math.max(0, Math.round(Number(value.autoEndsAt ?? 0))),
@@ -1647,6 +1655,26 @@
     context.restore();
   }
 
+  function drawScore(context, displayState) {
+    const score = displayState.score ?? { hit: 0, fail: 0, total: 0 };
+    const label = `H ${score.hit}  F ${score.fail}  T ${score.total}`;
+    const blurScale = renderScaleForContext(context);
+
+    context.save();
+    context.textAlign = "left";
+    context.textBaseline = "middle";
+    context.font = "700 30px system-ui, sans-serif";
+    context.shadowColor = COLORS.blue;
+    context.shadowBlur = 14 * blurScale;
+    context.fillStyle = "#dbe9ff";
+    context.fillText(label, LAYOUT.score.x, LAYOUT.score.y);
+    context.shadowBlur = 0;
+    context.strokeStyle = "rgba(71, 144, 255, 0.52)";
+    context.lineWidth = 1;
+    context.strokeText(label, LAYOUT.score.x, LAYOUT.score.y);
+    context.restore();
+  }
+
   function createScene(displayState, options = {}) {
     const scene = new LedScene({ stateOverride: gameOverGlobalState(displayState) });
     const centerLineY = LAYOUT.lane.y;
@@ -1684,6 +1712,7 @@
 
     scene.add({
       draw(context) {
+        drawScore(context, displayState);
         drawAutoCountdown(context, displayState);
       },
     });

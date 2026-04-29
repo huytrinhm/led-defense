@@ -8,6 +8,7 @@ const {
   DISPLAY_MODES,
   GAME,
   GAME_AUTOMATION,
+  GAME_RESULT_MODES,
   GAME_RUN_MODES,
   POWER,
   clampGameDurationMs,
@@ -15,10 +16,12 @@ const {
   clampPowerLevel,
   clampSpawnIntervalMs,
   normalizeDisplayMode,
+  normalizeGameResultMode,
   normalizeGameSeed,
   normalizeGameRunMode,
   normalizeInputForces,
   normalizeOutlineEffectMode,
+  normalizeScore,
   normalizeState,
 } = require("./state");
 
@@ -271,9 +274,11 @@ function resetGameState(visualSettings = {}) {
   const displayMode = normalizeDisplayMode(visualSettings.displayMode ?? state.displayMode);
   const outlineEffectMode = normalizeOutlineEffectMode(visualSettings.outlineEffectMode ?? state.outlineEffectMode);
   const gameSeed = normalizeGameSeed(visualSettings.gameSeed ?? state.gameSeed);
+  const gameResultMode = normalizeGameResultMode(visualSettings.gameResultMode ?? state.gameResultMode);
   resetStateTo({
     ...DEFAULT_STATE,
     displayMode,
+    gameResultMode,
     gameSeed,
     outlineEffectMode,
   });
@@ -281,6 +286,15 @@ function resetGameState(visualSettings = {}) {
 
 function updateState(patch) {
   setState({ ...state, ...patch });
+}
+
+function incrementScore(patch = {}) {
+  return normalizeScore({
+    ...state.score,
+    hit: state.score.hit + (Number(patch.hit) || 0),
+    fail: state.score.fail + (Number(patch.fail) || 0),
+    total: state.score.total + (Number(patch.total) || 0),
+  });
 }
 
 function tickGame() {
@@ -291,13 +305,16 @@ function tickGame() {
 
   const shotEnemies = state.enemies.filter((enemy) => enemy.shot);
   const activeEnemies = state.enemies.filter((enemy) => !enemy.shot);
+  const failingEnemies = activeEnemies.filter((enemy) => enemy.distance <= 1);
 
-  if (activeEnemies.some((enemy) => enemy.distance <= 1)) {
-    triggerGameOver();
+  if (failingEnemies.length > 0 && state.gameResultMode === GAME_RESULT_MODES.FAIL_FAST) {
+    triggerGameOver({ failCount: failingEnemies.length });
     return;
   }
 
-  const movedEnemies = activeEnemies
+  const failedIds = new Set(failingEnemies.map((enemy) => enemy.id));
+  const movingEnemies = activeEnemies.filter((enemy) => !failedIds.has(enemy.id));
+  const movedEnemies = movingEnemies
     .map((enemy) => ({ ...enemy, distance: enemy.distance - 1 }))
     .filter((enemy) => enemy.distance > 0);
   const enemies = [
@@ -309,10 +326,16 @@ function tickGame() {
     stopTick();
   }
 
-  setState({ ...state, autoEndsAt: autoEndsAt(), enemies, running: runningForEnemies(enemies) });
+  setState({
+    ...state,
+    autoEndsAt: autoEndsAt(),
+    enemies,
+    running: runningForEnemies(enemies),
+    score: failingEnemies.length > 0 ? incrementScore({ fail: failingEnemies.length }) : state.score,
+  });
 }
 
-function triggerGameOver() {
+function triggerGameOver({ failCount = 0 } = {}) {
   manualGameActive = false;
   stopGameStartTimer();
   stopShotAnimationTimers();
@@ -330,6 +353,7 @@ function triggerGameOver() {
     gameOverStartedAt,
     gameOverEnemyBlinkOn: true,
     gameOverLedState: null,
+    score: failCount > 0 ? incrementScore({ fail: failCount }) : state.score,
   });
   scheduleGameOverAnimation();
 }
@@ -391,8 +415,9 @@ function startGame(config = {}) {
   const displayMode = normalizeDisplayMode(config.displayMode ?? state.displayMode);
   const outlineEffectMode = normalizeOutlineEffectMode(config.outlineEffectMode ?? state.outlineEffectMode);
   const gameSeed = normalizeGameSeed(config.gameSeed ?? state.gameSeed);
+  const gameResultMode = normalizeGameResultMode(config.gameResultMode ?? state.gameResultMode);
 
-  resetGameState({ displayMode, gameSeed, outlineEffectMode });
+  resetGameState({ displayMode, gameResultMode, gameSeed, outlineEffectMode });
   updateState({ gameStarting: true, running: false });
   gameStartTimer = setTimeout(() => {
     gameStartTimer = null;
@@ -531,7 +556,13 @@ function spawnEnemy(requestedStartValue) {
     { id: String(nextEnemyId), start, distance: GAME.maxDistance },
   ].sort((left, right) => left.start - right.start);
   nextEnemyId += 1;
-  setState({ ...state, autoEndsAt: autoEndsAt(), enemies, running: true });
+  setState({
+    ...state,
+    autoEndsAt: autoEndsAt(),
+    enemies,
+    running: true,
+    score: incrementScore({ total: 1 }),
+  });
   startTick();
   return true;
 }
@@ -557,6 +588,7 @@ function shootPower() {
     powerLevel: 0,
     powerCharging: false,
     running: runningForEnemies(enemies),
+    score: shotEnemyIds.length > 0 ? incrementScore({ hit: shotEnemyIds.length }) : state.score,
   });
   if (activeEnemies.length === 0) {
     stopTick();
@@ -782,6 +814,7 @@ function normalizeStartGameBody(body = {}) {
   return {
     displayMode: body.displayMode,
     durationMs,
+    gameResultMode: body.gameResultMode,
     gameSeed: body.gameSeed,
     mode: body.mode,
     outlineEffectMode: body.outlineEffectMode,
@@ -906,6 +939,13 @@ async function handleApi(request, response, urlPathname) {
   if (urlPathname === "/api/outline-effect") {
     const body = await parseJsonBody(request);
     updateState({ outlineEffectMode: normalizeOutlineEffectMode(body.outlineEffectMode) });
+    sendEmpty(response);
+    return;
+  }
+
+  if (urlPathname === "/api/game-result-mode") {
+    const body = await parseJsonBody(request);
+    updateState({ gameResultMode: normalizeGameResultMode(body.gameResultMode) });
     sendEmpty(response);
     return;
   }
