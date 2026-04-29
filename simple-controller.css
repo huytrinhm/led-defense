@@ -58,7 +58,8 @@ body {
 }
 
 .side-button:hover,
-.side-button:active {
+.side-button:active,
+.side-button.is-active {
   border-color: #5b8dff;
   background: #1d3354;
 }

@@ -1,13 +1,14 @@
 (function () {
   "use strict";
 
+  const controls = window.LedDefenseControls;
   const leftButton = document.getElementById("move-left");
   const rightButton = document.getElementById("move-right");
   const chargeButton = document.getElementById("charge-power");
   const clientId = createClientId();
   let charging = false;
 
-  if (!leftButton || !rightButton || !chargeButton) {
+  if (!controls || !leftButton || !rightButton || !chargeButton) {
     return;
   }
 
@@ -29,16 +30,6 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       keepalive: Boolean(options.keepalive),
-    });
-  }
-
-  function sendTap(url, button) {
-    button.classList.add("is-active");
-    window.setTimeout(() => {
-      button.classList.remove("is-active");
-    }, 120);
-    postJson(url, {}).catch((error) => {
-      console.error("Unable to send control input", error);
     });
   }
 
@@ -68,12 +59,15 @@
     });
   }
 
-  leftButton.addEventListener("click", () => {
-    sendTap("/api/player/left", leftButton);
+  const leftMoveHold = controls.createMoveHold(leftButton, () => {
+    postJson("/api/player/left", {}).catch((error) => {
+      console.error("Unable to send control input", error);
+    });
   });
-
-  rightButton.addEventListener("click", () => {
-    sendTap("/api/player/right", rightButton);
+  const rightMoveHold = controls.createMoveHold(rightButton, () => {
+    postJson("/api/player/right", {}).catch((error) => {
+      console.error("Unable to send control input", error);
+    });
   });
 
   chargeButton.addEventListener("pointerdown", (event) => {
@@ -105,7 +99,11 @@
     }
   });
 
-  window.addEventListener("blur", releasePower);
+  window.addEventListener("blur", () => {
+    leftMoveHold.stop();
+    rightMoveHold.stop();
+    releasePower();
+  });
   window.addEventListener("resize", syncVisibleHeight);
   window.visualViewport?.addEventListener("resize", syncVisibleHeight);
   window.visualViewport?.addEventListener("scroll", syncVisibleHeight);

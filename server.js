@@ -613,6 +613,10 @@ function maxPlayerMovePerStep() {
   return GAME.maxPlayerMovePerStep ?? GAME.maxPlayerMovePerTick ?? 2;
 }
 
+function playerMoveUnitsPerTap() {
+  return GAME.playerMoveUnitsPerTap ?? 1;
+}
+
 function updateActivePlayerForces(now = Date.now()) {
   playerImpulses = playerImpulses.filter((impulse) => impulse.expiresAt > now);
   playerForces = playerImpulses.reduce((forces, impulse) => {
@@ -623,7 +627,7 @@ function updateActivePlayerForces(now = Date.now()) {
 }
 
 function playerForceMagnitude(netForce) {
-  return Math.min(maxPlayerMovePerStep(), Math.max(1, Math.abs(netForce)));
+  return Math.min(maxPlayerMovePerStep(), Math.max(1, Math.abs(netForce) * playerMoveUnitsPerTap()));
 }
 
 function hasPendingPlayerForces() {

@@ -2,6 +2,7 @@
   "use strict";
 
   const stateTools = window.LedDefenseState;
+  const controls = window.LedDefenseControls;
   const modeSelect = document.getElementById("display-mode");
   const outlineSelect = document.getElementById("outline-effect");
   const gameModeSelect = document.getElementById("game-run-mode");
@@ -24,6 +25,7 @@
 
   if (
     !stateTools
+    || !controls
     || !modeSelect
     || !outlineSelect
     || !gameModeSelect
@@ -219,15 +221,14 @@
     });
   });
 
-  leftButton.addEventListener("click", () => {
+  const leftMoveHold = controls.createMoveHold(leftButton, () => {
     postJson("/api/player/left", {}).catch((error) => {
-      console.error("Unable to move left", error);
+      console.error("Unable to move player", error);
     });
   });
-
-  rightButton.addEventListener("click", () => {
+  const rightMoveHold = controls.createMoveHold(rightButton, () => {
     postJson("/api/player/right", {}).catch((error) => {
-      console.error("Unable to move right", error);
+      console.error("Unable to move player", error);
     });
   });
 
@@ -270,7 +271,11 @@
     });
   });
 
-  window.addEventListener("blur", releasePower);
+  window.addEventListener("blur", () => {
+    leftMoveHold.stop();
+    rightMoveHold.stop();
+    releasePower();
+  });
   window.addEventListener("beforeunload", () => {
     releasePower({ keepalive: true });
   });

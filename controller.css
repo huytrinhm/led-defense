@@ -221,9 +221,11 @@ select {
 .move-button {
   border-color: #3b6cc0;
   background: #142849;
+  touch-action: none;
 }
 
-.move-button:hover {
+.move-button:hover,
+.move-button.is-active {
   border-color: #76a8ff;
   background: #173a6b;
 }
