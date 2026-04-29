@@ -35,18 +35,18 @@
   const DIRTY_REPAINT_PADDING = 48;
   const AUDIO = Object.freeze({
     chargeFadeMs: 90,
-    chargeVolume: 0.09,
+    chargeVolume: 0.1,
     enemyTickMaxMs: 1050,
     enemyTickMinMs: 120,
-    enemyTickVolume: 0.14,
+    enemyTickVolume: 0.22,
     enemyTickMinSpeakerGain: 0.08,
     enemyTickPanPower: 1.65,
     enemyTickPanWidth: 22,
     enemyTickStereoDistanceDrop: 0.46,
-    gameStartVolume: 0.18,
-    gameOverVolume: 0.22,
-    masterVolume: 0.92,
-    shootVolume: 0.31,
+    gameStartVolume: 0.42,
+    gameOverVolume: 0.34,
+    masterVolume: 1,
+    shootVolume: 0.4,
   });
 
   const LAYOUT = Object.freeze({
