@@ -11,7 +11,6 @@
   const remainingTime = document.getElementById("remaining-time");
   const connectedDisplays = document.getElementById("connected-displays");
   const startButton = document.getElementById("start-game");
-  const resetButton = document.getElementById("reset-state");
   const leftButton = document.getElementById("move-left");
   const rightButton = document.getElementById("move-right");
   const chargeButton = document.getElementById("charge-power");
@@ -34,7 +33,6 @@
     || !remainingTime
     || !connectedDisplays
     || !startButton
-    || !resetButton
     || !leftButton
     || !rightButton
     || !chargeButton
@@ -98,22 +96,6 @@
   gameModeSelect.value = stateTools.GAME_AUTOMATION.defaultMode;
   gameTimeInput.value = String(stateTools.GAME_AUTOMATION.defaultDurationMs / 1000);
   spawnRateInput.value = String(stateTools.GAME_AUTOMATION.defaultSpawnIntervalMs / 1000);
-
-  function resetVisualControlValues() {
-    modeSelect.value = stateTools.DEFAULT_STATE.displayMode;
-    outlineSelect.value = stateTools.DEFAULT_STATE.outlineEffectMode;
-  }
-
-  function resetGameConfigValues() {
-    gameModeSelect.value = stateTools.GAME_AUTOMATION.defaultMode;
-    gameTimeInput.value = String(stateTools.GAME_AUTOMATION.defaultDurationMs / 1000);
-    spawnRateInput.value = String(stateTools.GAME_AUTOMATION.defaultSpawnIntervalMs / 1000);
-  }
-
-  function resetControlValues() {
-    resetVisualControlValues();
-    resetGameConfigValues();
-  }
 
   function syncVisualControls(state) {
     if (!state || visualControlsDirty) {
@@ -218,14 +200,6 @@
       console.error("Unable to start game", error);
     });
   }
-
-  resetButton.addEventListener("click", () => {
-    releasePower();
-    resetControlValues();
-    postJson("/api/state/reset", {}).catch((error) => {
-      console.error("Unable to reset display state", error);
-    });
-  });
 
   modeSelect.addEventListener("change", () => {
     visualControlsDirty = true;

@@ -174,7 +174,7 @@ select {
 }
 
 .game-actions {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 16px;
 }
 
@@ -216,16 +216,6 @@ select {
 .stop-button:hover {
   border-color: #ff7c7c;
   background: #641e26;
-}
-
-.reset-button {
-  border-color: #86633b;
-  background: #332414;
-}
-
-.reset-button:hover {
-  border-color: #dca760;
-  background: #4a3217;
 }
 
 .move-button {
