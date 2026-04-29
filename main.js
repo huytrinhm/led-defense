@@ -204,6 +204,7 @@
       this.enemyTickTimer = null;
       this.enemyDistance = null;
       this.enemySpatial = null;
+      this.enemyTickEnemyId = null;
       this.enemyTickActive = false;
       this.speakerRole = null;
     }
@@ -374,11 +375,19 @@
     }
 
     updateEnemyTick(enemy) {
+      const previousDistance = this.enemyDistance;
+      const previousEnemyId = this.enemyTickEnemyId;
       const nextDistance = Number.isFinite(Number(enemy?.distance)) ? Number(enemy.distance) : null;
+      const nextSpatial = enemy?.spatial ?? null;
+      const nextEnemyId = enemy?.id ?? null;
       this.enemyDistance = nextDistance;
-      this.enemySpatial = enemy?.spatial ?? null;
+      this.enemySpatial = nextSpatial;
+      this.enemyTickEnemyId = nextEnemyId;
       const shouldTick = nextDistance !== null;
       if (shouldTick === this.enemyTickActive) {
+        if (shouldTick && (nextDistance !== previousDistance || nextEnemyId !== previousEnemyId)) {
+          this.scheduleEnemyTick(Math.min(this.enemyTickDelay(), AUDIO.enemyTickMinMs));
+        }
         return;
       }
 

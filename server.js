@@ -24,6 +24,7 @@ const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
 const ROOT_PREFIX = `${ROOT}${path.sep}`;
+const SSE_HEARTBEAT_MS = 15000;
 const clients = new Set();
 let state = normalizeState(DEFAULT_STATE);
 let tickTimer = null;
@@ -101,6 +102,7 @@ function normalizeClientRole(value) {
 }
 
 function connectedDisplayCount() {
+  pruneDisconnectedClients();
   let count = 0;
   for (const client of clients) {
     if (client.role === "display") {
@@ -121,7 +123,23 @@ function sendState(client) {
   client.response.write(`data: ${JSON.stringify(statePayload())}\n\n`);
 }
 
+function isClientConnected(client) {
+  const { response } = client;
+  return !response.destroyed
+    && !response.writableEnded
+    && !response.socket?.destroyed;
+}
+
+function pruneDisconnectedClients() {
+  for (const client of clients) {
+    if (!isClientConnected(client)) {
+      clients.delete(client);
+    }
+  }
+}
+
 function broadcastState() {
+  pruneDisconnectedClients();
   for (const client of clients) {
     try {
       sendState(client);
@@ -400,7 +418,7 @@ function beginStartedGame(config) {
     spawnEnemy();
   }, spawnIntervalMs);
   autoStopTimer = setTimeout(() => {
-    resetState();
+    resetGameState();
   }, durationMs);
 }
 
@@ -730,6 +748,7 @@ function handleEvents(request, response, searchParams) {
     response,
     role: normalizeClientRole(searchParams.get("role")),
   };
+  let heartbeatTimer = null;
 
   response.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
@@ -743,11 +762,29 @@ function handleEvents(request, response, searchParams) {
   broadcastState();
 
   const cleanup = () => {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
     if (clients.delete(client)) {
       broadcastState();
     }
   };
+  heartbeatTimer = setInterval(() => {
+    if (!isClientConnected(client)) {
+      cleanup();
+      return;
+    }
+
+    try {
+      response.write(": heartbeat\n\n");
+    } catch (error) {
+      cleanup();
+    }
+  }, SSE_HEARTBEAT_MS);
+  heartbeatTimer.unref?.();
   request.on("close", cleanup);
+  request.on("aborted", cleanup);
   response.on("error", cleanup);
   response.on("close", cleanup);
 }
