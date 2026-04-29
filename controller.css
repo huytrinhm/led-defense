@@ -20,14 +20,14 @@ body {
   min-height: 100%;
   display: grid;
   place-items: center;
-  padding: 32px;
+  padding: 24px;
 }
 
 .control-panel {
-  width: min(720px, 100%);
+  width: min(860px, 100%);
   border: 1px solid #263245;
   border-radius: 8px;
-  padding: 24px;
+  padding: 20px;
   background: #101621;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
 }
@@ -37,7 +37,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 32px;
+  margin-bottom: 18px;
 }
 
 h1,
@@ -51,9 +51,9 @@ h1 {
 }
 
 p {
-  margin-top: 6px;
+  margin-top: 4px;
   color: #91a2bb;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .display-link,
@@ -67,11 +67,20 @@ button {
   font: inherit;
   text-decoration: none;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .display-link {
   display: inline-grid;
   place-items: center;
+}
+
+.header-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .display-link:hover,
@@ -80,21 +89,8 @@ button:hover {
   background: #1d2d4a;
 }
 
-.control-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
-}
-
-.compact-row {
-  align-items: center;
-  margin-top: 28px;
-}
-
 label {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 650;
 }
 
@@ -105,23 +101,108 @@ output {
   text-align: right;
 }
 
+input,
 select {
-  min-height: 40px;
-  min-width: 220px;
+  width: 100%;
+  min-height: 36px;
+  min-width: 0;
   border: 1px solid #3b4d67;
   border-radius: 6px;
-  padding: 0 12px;
+  padding: 0 10px;
   color: #eef4ff;
   background: #182234;
   font: inherit;
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
-  justify-content: flex-end;
-  margin-top: 28px;
+  padding: 12px;
+  border: 1px solid #223049;
+  border-radius: 8px;
+  background: #0c121c;
+}
+
+.config-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.config-field span {
+  color: #9cacbf;
+  font-size: 12px;
+}
+
+.button-row {
+  display: grid;
+  gap: 10px;
+}
+
+.game-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.play-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.button-row button {
+  min-height: 48px;
+  font-weight: 750;
+}
+
+.start-button {
+  border-color: #2f9f68;
+  background: #113424;
+}
+
+.start-button:hover {
+  border-color: #58e096;
+  background: #155535;
+}
+
+.spawn-button {
+  border-color: #386fc4;
+  background: #122a50;
+}
+
+.spawn-button:hover {
+  border-color: #65a0ff;
+  background: #173a73;
+}
+
+.stop-button {
+  border-color: #c15353;
+  background: #41191d;
+}
+
+.stop-button:hover {
+  border-color: #ff7c7c;
+  background: #641e26;
+}
+
+.reset-button {
+  border-color: #86633b;
+  background: #332414;
+}
+
+.reset-button:hover {
+  border-color: #dca760;
+  background: #4a3217;
+}
+
+.move-button {
+  border-color: #3b6cc0;
+  background: #142849;
+}
+
+.move-button:hover {
+  border-color: #76a8ff;
+  background: #173a6b;
 }
 
 .power-button {
@@ -134,4 +215,14 @@ select {
 .power-button.is-active {
   border-color: #b56dff;
   background: #43206c;
+}
+
+@media (max-width: 760px) {
+  .config-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .game-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

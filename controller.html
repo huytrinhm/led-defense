@@ -15,24 +15,60 @@
             <h1 id="controller-title">LED Defense Controller</h1>
             <p>Display state controls</p>
           </div>
-          <a class="display-link" href="/display" target="_blank" rel="noreferrer">Open Display</a>
+          <div class="header-links">
+            <a class="display-link" href="/display" target="_blank" rel="noreferrer">Open Display</a>
+            <a class="display-link" href="/simple" target="_blank" rel="noreferrer">Open Simple Control</a>
+          </div>
         </header>
 
-        <div class="control-row compact-row">
-          <label for="display-mode">Display mode</label>
-          <select id="display-mode">
-            <option value="target">Mode A - Moving Target</option>
-            <option value="fov">Mode B - Player FOV</option>
-          </select>
+        <div class="config-grid" aria-label="Game configuration">
+          <label class="config-field" for="display-mode">
+            <span>Display</span>
+            <select id="display-mode">
+              <option value="target">Mode A</option>
+              <option value="fov">Mode B</option>
+            </select>
+          </label>
+
+          <label class="config-field" for="outline-effect">
+            <span>Outline</span>
+            <select id="outline-effect">
+              <option value="none">None</option>
+              <option value="same">Same</option>
+              <option value="reverse">Reverse</option>
+            </select>
+          </label>
+
+          <label class="config-field" for="game-run-mode">
+            <span>Mode</span>
+            <select id="game-run-mode">
+              <option value="manual">Manual</option>
+              <option value="auto">Auto</option>
+            </select>
+          </label>
+
+          <label class="config-field" for="game-time">
+            <span>Time</span>
+            <input id="game-time" type="number" min="5" max="600" step="5" value="120">
+          </label>
+
+          <label class="config-field" for="spawn-rate">
+            <span>Spawn</span>
+            <input id="spawn-rate" type="number" min="0.5" max="15" step="0.1" value="7">
+          </label>
         </div>
 
-        <div class="actions">
-          <button id="move-left" type="button">Left</button>
-          <button id="move-right" type="button">Right</button>
+        <div class="button-row game-actions" aria-label="Game controls">
+          <button id="start-game" class="start-button" type="button">Start</button>
+          <button id="spawn-enemy" class="spawn-button" type="button">Spawn</button>
+          <button id="stop-game" class="stop-button" type="button">Stop</button>
+          <button id="reset-state" class="reset-button" type="button">Reset</button>
+        </div>
+
+        <div class="button-row play-actions" aria-label="In-game controls">
+          <button id="move-left" class="move-button" type="button">Left</button>
           <button id="charge-power" class="power-button" type="button" aria-pressed="false">Charge</button>
-          <button id="spawn-enemy" type="button">Spawn Enemy</button>
-          <button id="stop-game" type="button">Stop Game</button>
-          <button id="reset-state" type="button">Reset State</button>
+          <button id="move-right" class="move-button" type="button">Right</button>
         </div>
       </section>
     </main>

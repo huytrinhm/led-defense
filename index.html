@@ -9,6 +9,16 @@
   </head>
   <body>
     <canvas id="led-canvas" role="img" aria-label="LED defense simulation"></canvas>
+    <div class="speaker-dialog" id="speaker-dialog" role="dialog" aria-modal="true" aria-labelledby="speaker-dialog-title">
+      <div class="speaker-dialog__panel">
+        <h1 id="speaker-dialog-title">Speaker</h1>
+        <div class="speaker-dialog__actions">
+          <button class="speaker-dialog__button" id="speaker-left" type="button">Left</button>
+          <button class="speaker-dialog__button" id="speaker-stereo" type="button">Stereo</button>
+          <button class="speaker-dialog__button" id="speaker-right" type="button">Right</button>
+        </div>
+      </div>
+    </div>
     <script src="state.js"></script>
     <script src="main.js"></script>
   </body>

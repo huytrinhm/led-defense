@@ -6,14 +6,21 @@ const path = require("path");
 const {
   DEFAULT_STATE,
   GAME,
+  GAME_AUTOMATION,
+  GAME_RUN_MODES,
   POWER,
+  clampGameDurationMs,
   clampPlayerStart,
   clampPowerLevel,
+  clampSpawnIntervalMs,
   normalizeDisplayMode,
+  normalizeGameRunMode,
   normalizeInputForces,
+  normalizeOutlineEffectMode,
   normalizeState,
 } = require("./state");
 
+const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
 const ROOT_PREFIX = `${ROOT}${path.sep}`;
@@ -21,10 +28,21 @@ const clients = new Set();
 let state = normalizeState(DEFAULT_STATE);
 let tickTimer = null;
 let movementTimer = null;
+let movementSettleTimer = null;
 let powerTimer = null;
+let powerFireTimer = null;
+let gameStartTimer = null;
+let autoSpawnTimer = null;
+let autoStopTimer = null;
 const gameOverAnimationTimers = new Set();
+const shotAnimationTimers = new Set();
 let nextEnemyId = 1;
 let playerForces = { left: 0, right: 0 };
+let pendingPlayerForces = { left: 0, right: 0 };
+let playerImpulses = [];
+let lastPlayerMoveAt = 0;
+let autoGame = null;
+let manualGameActive = false;
 const chargingClients = new Set();
 
 const MIME_TYPES = Object.freeze({
@@ -101,6 +119,10 @@ function stopMovementTimer() {
     clearInterval(movementTimer);
     movementTimer = null;
   }
+  if (movementSettleTimer) {
+    clearTimeout(movementSettleTimer);
+    movementSettleTimer = null;
+  }
 }
 
 function stopPowerTimer() {
@@ -108,6 +130,37 @@ function stopPowerTimer() {
     clearTimeout(powerTimer);
     powerTimer = null;
   }
+  if (powerFireTimer) {
+    clearTimeout(powerFireTimer);
+    powerFireTimer = null;
+  }
+}
+
+function stopAutoGameTimers() {
+  if (autoSpawnTimer) {
+    clearInterval(autoSpawnTimer);
+    autoSpawnTimer = null;
+  }
+  if (autoStopTimer) {
+    clearTimeout(autoStopTimer);
+    autoStopTimer = null;
+  }
+  autoGame = null;
+}
+
+function stopGameStartTimer() {
+  if (gameStartTimer) {
+    clearTimeout(gameStartTimer);
+    gameStartTimer = null;
+  }
+}
+
+function runningForEnemies(enemies) {
+  return manualGameActive || Boolean(autoGame) || enemies.length > 0;
+}
+
+function autoEndsAt() {
+  return autoGame?.endsAt ?? 0;
 }
 
 function stopGameOverAnimationTimers() {
@@ -117,14 +170,28 @@ function stopGameOverAnimationTimers() {
   gameOverAnimationTimers.clear();
 }
 
+function stopShotAnimationTimers() {
+  for (const timer of shotAnimationTimers) {
+    clearTimeout(timer);
+  }
+  shotAnimationTimers.clear();
+}
+
 function resetPlayerForces() {
+  playerImpulses = [];
   playerForces = { left: 0, right: 0 };
+  pendingPlayerForces = { left: 0, right: 0 };
+  lastPlayerMoveAt = 0;
   stopMovementTimer();
 }
 
 function resetPowerInput() {
   chargingClients.clear();
   stopPowerTimer();
+}
+
+function powerChargingState() {
+  return chargingClients.size > 0;
 }
 
 function publishPlayerForces() {
@@ -138,9 +205,13 @@ function setState(nextState) {
 
 function resetState() {
   stopGameOverAnimationTimers();
+  stopShotAnimationTimers();
+  stopGameStartTimer();
+  stopAutoGameTimers();
   stopTick();
   resetPlayerForces();
   resetPowerInput();
+  manualGameActive = false;
   nextEnemyId = 1;
   setState(DEFAULT_STATE);
 }
@@ -155,23 +226,34 @@ function tickGame() {
     return;
   }
 
-  if (state.enemies.some((enemy) => enemy.distance <= 1)) {
+  const shotEnemies = state.enemies.filter((enemy) => enemy.shot);
+  const activeEnemies = state.enemies.filter((enemy) => !enemy.shot);
+
+  if (activeEnemies.some((enemy) => enemy.distance <= 1)) {
     triggerGameOver();
     return;
   }
 
-  const enemies = state.enemies
+  const movedEnemies = activeEnemies
     .map((enemy) => ({ ...enemy, distance: enemy.distance - 1 }))
     .filter((enemy) => enemy.distance > 0);
+  const enemies = [
+    ...shotEnemies,
+    ...movedEnemies,
+  ].sort((left, right) => left.start - right.start);
 
-  if (enemies.length === 0) {
+  if (movedEnemies.length === 0) {
     stopTick();
   }
 
-  setState({ ...state, enemies, running: enemies.length > 0 });
+  setState({ ...state, autoEndsAt: autoEndsAt(), enemies, running: runningForEnemies(enemies) });
 }
 
 function triggerGameOver() {
+  manualGameActive = false;
+  stopGameStartTimer();
+  stopShotAnimationTimers();
+  stopAutoGameTimers();
   stopTick();
   resetPlayerForces();
   resetPowerInput();
@@ -179,6 +261,7 @@ function triggerGameOver() {
   setState({
     ...state,
     inputForces: playerForces,
+    gameStarting: false,
     running: false,
     gameOver: true,
     gameOverStartedAt,
@@ -238,6 +321,49 @@ function startTick() {
   }
 }
 
+function startGame(config = {}) {
+  const mode = normalizeGameRunMode(config.mode ?? GAME_AUTOMATION.defaultMode);
+  const durationMs = clampGameDurationMs(config.durationMs);
+  const spawnIntervalMs = clampSpawnIntervalMs(config.spawnIntervalMs);
+
+  resetState();
+  updateState({ gameStarting: true, running: false });
+  gameStartTimer = setTimeout(() => {
+    gameStartTimer = null;
+    beginStartedGame({ durationMs, mode, spawnIntervalMs });
+  }, GAME.gameStartCountdownMs ?? 2400);
+}
+
+function beginStartedGame(config) {
+  if (state.gameOver || !state.gameStarting) {
+    return;
+  }
+
+  const { durationMs, mode, spawnIntervalMs } = config;
+  if (mode === GAME_RUN_MODES.MANUAL) {
+    manualGameActive = true;
+    updateState({ autoEndsAt: 0, gameStarting: false, running: true });
+    return;
+  }
+
+  autoGame = {
+    endsAt: Date.now() + durationMs,
+    spawnIntervalMs,
+  };
+  updateState({ autoEndsAt: autoEndsAt(), gameStarting: false, running: true });
+  spawnEnemy();
+  autoSpawnTimer = setInterval(() => {
+    if (!autoGame || state.gameOver) {
+      stopAutoGameTimers();
+      return;
+    }
+    spawnEnemy();
+  }, spawnIntervalMs);
+  autoStopTimer = setTimeout(() => {
+    resetState();
+  }, durationMs);
+}
+
 function overlapsEnemy(start, enemy) {
   const end = start + GAME.enemyWidth - 1;
   const enemyEnd = enemy.start + GAME.enemyWidth - 1;
@@ -245,6 +371,10 @@ function overlapsEnemy(start, enemy) {
 }
 
 function enemyOverlapsPlayer(enemy) {
+  if (enemy.shot) {
+    return false;
+  }
+
   const playerEnd = state.playerStart + GAME.playerWidth - 1;
   const enemyEnd = enemy.start + GAME.enemyWidth - 1;
   return enemy.start <= playerEnd && enemyEnd >= state.playerStart;
@@ -261,8 +391,31 @@ function legalSpawnStarts() {
   return starts;
 }
 
+function removeShotEnemies(enemyIds) {
+  const idSet = new Set(enemyIds);
+  const enemies = state.enemies.filter((enemy) => !(enemy.shot && idSet.has(enemy.id)));
+  const activeEnemies = enemies.filter((enemy) => !enemy.shot);
+  if (activeEnemies.length === 0) {
+    stopTick();
+  }
+  setState({
+    ...state,
+    autoEndsAt: autoEndsAt(),
+    enemies,
+    running: runningForEnemies(enemies),
+  });
+}
+
+function scheduleShotEnemyRemoval(enemyIds) {
+  const timer = setTimeout(() => {
+    shotAnimationTimers.delete(timer);
+    removeShotEnemies(enemyIds);
+  }, GAME.shotEnemyMs ?? 500);
+  shotAnimationTimers.add(timer);
+}
+
 function spawnEnemy(requestedStartValue) {
-  if (state.gameOver) {
+  if (state.gameOver || state.gameStarting) {
     return false;
   }
 
@@ -280,7 +433,7 @@ function spawnEnemy(requestedStartValue) {
     { id: String(nextEnemyId), start, distance: GAME.maxDistance },
   ].sort((left, right) => left.start - right.start);
   nextEnemyId += 1;
-  setState({ ...state, enemies, running: true });
+  setState({ ...state, autoEndsAt: autoEndsAt(), enemies, running: true });
   startTick();
   return true;
 }
@@ -292,14 +445,26 @@ function shootPower() {
   }
 
   resetPowerInput();
-  const enemies = state.enemies.filter((enemy) => !enemyOverlapsPlayer(enemy));
+  const shotEnemyIds = [];
+  const enemies = state.enemies.map((enemy) => {
+    if (!enemy.shot && enemyOverlapsPlayer(enemy)) {
+      shotEnemyIds.push(enemy.id);
+      return { ...enemy, shot: true };
+    }
+    return enemy;
+  });
+  const activeEnemies = enemies.filter((enemy) => !enemy.shot);
   updateState({
     enemies,
     powerLevel: 0,
-    running: enemies.length > 0,
+    powerCharging: false,
+    running: runningForEnemies(enemies),
   });
-  if (enemies.length === 0) {
+  if (activeEnemies.length === 0) {
     stopTick();
+  }
+  if (shotEnemyIds.length > 0) {
+    scheduleShotEnemyRemoval(shotEnemyIds);
   }
 }
 
@@ -319,6 +484,17 @@ function schedulePowerTimer() {
   powerTimer = setTimeout(tickPower, charging ? POWER.chargeMs : POWER.drainMs);
 }
 
+function schedulePowerFire() {
+  if (powerFireTimer) {
+    return;
+  }
+
+  powerFireTimer = setTimeout(() => {
+    powerFireTimer = null;
+    shootPower();
+  }, POWER.fireHoldMs ?? 160);
+}
+
 function tickPower() {
   powerTimer = null;
 
@@ -329,7 +505,12 @@ function tickPower() {
 
   if (chargingClients.size > 0) {
     if (state.powerLevel < POWER.maxLevel) {
-      updateState({ powerLevel: clampPowerLevel(state.powerLevel + 1) });
+      const nextPowerLevel = clampPowerLevel(state.powerLevel + 1);
+      updateState({ powerLevel: nextPowerLevel });
+      if (nextPowerLevel >= POWER.maxLevel) {
+        schedulePowerFire();
+        return;
+      }
     }
   } else if (state.powerLevel > 0) {
     updateState({ powerLevel: clampPowerLevel(state.powerLevel - 1) });
@@ -349,11 +530,12 @@ function pressPower(clientIdValue) {
   }
 
   if (state.powerLevel >= POWER.maxLevel) {
-    shootPower();
+    schedulePowerFire();
     return;
   }
 
   chargingClients.add(normalizeClientId(clientIdValue));
+  updateState({ powerCharging: powerChargingState() });
   stopPowerTimer();
   schedulePowerTimer();
 }
@@ -365,6 +547,7 @@ function releasePower(clientIdValue) {
   }
 
   chargingClients.delete(normalizeClientId(clientIdValue));
+  updateState({ powerCharging: powerChargingState() });
   stopPowerTimer();
   schedulePowerTimer();
 }
@@ -374,32 +557,95 @@ function nextPlayerStart(delta) {
   return nextPlayerStart;
 }
 
-function resolvePlayerForces() {
-  const { left, right } = playerForces;
-  playerForces = { left: 0, right: 0 };
-  stopMovementTimer();
+function movementStepMs() {
+  return GAME.movementStepMs ?? 250;
+}
 
-  if (left + right === 0) {
+function movementImpulseMs() {
+  return GAME.movementImpulseMs ?? Math.max(700, movementStepMs() * 3);
+}
+
+function movementSettleMs() {
+  return GAME.movementSettleMs ?? 60;
+}
+
+function maxPlayerMovePerStep() {
+  return GAME.maxPlayerMovePerStep ?? GAME.maxPlayerMovePerTick ?? 2;
+}
+
+function updateActivePlayerForces(now = Date.now()) {
+  playerImpulses = playerImpulses.filter((impulse) => impulse.expiresAt > now);
+  playerForces = playerImpulses.reduce((forces, impulse) => {
+    forces[impulse.direction] += 1;
+    return forces;
+  }, { left: 0, right: 0 });
+  return playerForces;
+}
+
+function playerForceMagnitude(netForce) {
+  return Math.min(maxPlayerMovePerStep(), Math.max(1, Math.abs(netForce)));
+}
+
+function hasPendingPlayerForces() {
+  return pendingPlayerForces.left + pendingPlayerForces.right > 0;
+}
+
+function scheduleMovementSettle() {
+  if (movementSettleTimer) {
+    return;
+  }
+
+  movementSettleTimer = setTimeout(() => {
+    movementSettleTimer = null;
+    resolvePlayerMotion({ immediate: true });
+  }, movementSettleMs());
+}
+
+function stopMovementIfIdle(activeForceCount) {
+  if (activeForceCount === 0 && !hasPendingPlayerForces()) {
+    stopMovementTimer();
+  }
+}
+
+function resolvePlayerMotion({ immediate = false } = {}) {
+  const now = Date.now();
+  const activeForces = updateActivePlayerForces(now);
+  const activeForceCount = activeForces.left + activeForces.right;
+
+  if (!hasPendingPlayerForces()) {
+    stopMovementIfIdle(activeForceCount);
+    if (state.inputForces.left !== 0 || state.inputForces.right !== 0) {
+      publishPlayerForces();
+    }
+    return;
+  }
+
+  if (!immediate && now - lastPlayerMoveAt < movementStepMs()) {
     publishPlayerForces();
     return;
   }
 
+  const { left, right } = pendingPlayerForces;
+  pendingPlayerForces = { left: 0, right: 0 };
   const netForce = right - left;
+
   if (netForce === 0) {
-    updateState({ inputForces: playerForces });
+    stopMovementIfIdle(activeForceCount);
+    publishPlayerForces();
     return;
   }
 
-  const magnitude = Math.min(GAME.maxPlayerMovePerTick, Math.max(1, Math.abs(netForce)));
+  const playerStart = nextPlayerStart(Math.sign(netForce) * playerForceMagnitude(netForce));
+  lastPlayerMoveAt = now;
   updateState({
-    inputForces: playerForces,
-    playerStart: nextPlayerStart(Math.sign(netForce) * magnitude),
+    inputForces: normalizeInputForces(playerForces),
+    playerStart,
   });
 }
 
 function startMovementTimer() {
   if (!movementTimer) {
-    movementTimer = setInterval(resolvePlayerForces, GAME.movementTickMs);
+    movementTimer = setInterval(resolvePlayerMotion, movementStepMs());
   }
 }
 
@@ -408,13 +654,29 @@ function addPlayerForce(direction) {
     return;
   }
 
-  if (direction < 0) {
-    playerForces.left += 1;
-  } else {
-    playerForces.right += 1;
-  }
+  const now = Date.now();
+  const forceDirection = direction < 0 ? "left" : "right";
+  pendingPlayerForces[forceDirection] += 1;
+  playerImpulses.push({
+    direction: forceDirection,
+    expiresAt: now + movementImpulseMs(),
+  });
+  updateActivePlayerForces(now);
   publishPlayerForces();
+  if (now - lastPlayerMoveAt >= movementStepMs()) {
+    scheduleMovementSettle();
+  }
   startMovementTimer();
+}
+
+function normalizeStartGameBody(body = {}) {
+  const durationMs = body.durationMs ?? Number(body.durationSeconds) * 1000;
+  const spawnIntervalMs = body.spawnIntervalMs ?? Number(body.spawnIntervalSeconds) * 1000;
+  return {
+    durationMs,
+    mode: body.mode,
+    spawnIntervalMs,
+  };
 }
 
 function handleEvents(request, response) {
@@ -438,7 +700,8 @@ function handleEvents(request, response) {
 function resolveStaticPath(urlPathname) {
   const routePath = urlPathname === "/" ? "/controller.html" : urlPathname;
   const displayRoutePath = routePath === "/display" ? "/index.html" : routePath;
-  const normalizedPath = path.normalize(displayRoutePath).replace(/^([/\\])/, "");
+  const viewRoutePath = displayRoutePath === "/simple" ? "/simple-controller.html" : displayRoutePath;
+  const normalizedPath = path.normalize(viewRoutePath).replace(/^([/\\])/, "");
   const filePath = path.resolve(ROOT, normalizedPath);
   return filePath === ROOT || filePath.startsWith(ROOT_PREFIX) ? filePath : null;
 }
@@ -502,8 +765,22 @@ async function handleApi(request, response, urlPathname) {
     return;
   }
 
+  if (urlPathname === "/api/outline-effect") {
+    const body = await parseJsonBody(request);
+    updateState({ outlineEffectMode: normalizeOutlineEffectMode(body.outlineEffectMode) });
+    sendEmpty(response);
+    return;
+  }
+
   if (urlPathname === "/api/game/stop") {
     resetState();
+    sendEmpty(response);
+    return;
+  }
+
+  if (urlPathname === "/api/game/start") {
+    const body = await parseJsonBody(request);
+    startGame(normalizeStartGameBody(body));
     sendEmpty(response);
     return;
   }
@@ -553,7 +830,7 @@ const server = http.createServer((request, response) => {
   serveStatic(request, response, url.pathname);
 });
 
-server.listen(PORT, () => {
-  console.log(`LED defense server running at http://127.0.0.1:${PORT}/`);
-  console.log(`Display available at http://127.0.0.1:${PORT}/display`);
+server.listen(PORT, HOST, () => {
+  console.log(`LED defense server running at http://${HOST}:${PORT}/`);
+  console.log(`Display available at http://${HOST}:${PORT}/display`);
 });

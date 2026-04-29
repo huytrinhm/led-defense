@@ -19,3 +19,59 @@ body {
   display: block;
   background: #000;
 }
+
+.speaker-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.72);
+  user-select: none;
+}
+
+.speaker-dialog[hidden] {
+  display: none;
+}
+
+.speaker-dialog__panel {
+  display: grid;
+  gap: 24px;
+  width: min(520px, calc(100vw - 48px));
+  padding: 32px;
+  border: 1px solid rgba(71, 144, 255, 0.72);
+  background: #03060d;
+  box-shadow: 0 0 40px rgba(71, 144, 255, 0.24);
+}
+
+.speaker-dialog__panel h1 {
+  margin: 0;
+  color: #dbe9ff;
+  font: 600 28px/1.1 system-ui, sans-serif;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.speaker-dialog__actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.speaker-dialog__button {
+  min-height: 96px;
+  border: 1px solid rgba(71, 144, 255, 0.84);
+  background: #071326;
+  color: #eef6ff;
+  cursor: pointer;
+  font: 700 30px/1 system-ui, sans-serif;
+  letter-spacing: 0;
+  user-select: none;
+}
+
+.speaker-dialog__button:hover,
+.speaker-dialog__button:focus-visible {
+  outline: none;
+  background: #0b2450;
+  box-shadow: 0 0 28px rgba(71, 144, 255, 0.42);
+}
