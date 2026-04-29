@@ -8,6 +8,7 @@
   const gameModeSelect = document.getElementById("game-run-mode");
   const gameTimeInput = document.getElementById("game-time");
   const spawnRateInput = document.getElementById("spawn-rate");
+  const seedInput = document.getElementById("game-seed");
   const gameStatus = document.getElementById("game-status");
   const remainingTime = document.getElementById("remaining-time");
   const connectedDisplays = document.getElementById("connected-displays");
@@ -20,6 +21,7 @@
   const clientId = createClientId();
   let charging = false;
   let visualControlsDirty = false;
+  let seedControlDirty = false;
   let latestStatusState = null;
   let statusTimer = null;
 
@@ -31,6 +33,7 @@
     || !gameModeSelect
     || !gameTimeInput
     || !spawnRateInput
+    || !seedInput
     || !gameStatus
     || !remainingTime
     || !connectedDisplays
@@ -98,6 +101,7 @@
   gameModeSelect.value = stateTools.GAME_AUTOMATION.defaultMode;
   gameTimeInput.value = String(stateTools.GAME_AUTOMATION.defaultDurationMs / 1000);
   spawnRateInput.value = String(stateTools.GAME_AUTOMATION.defaultSpawnIntervalMs / 1000);
+  seedInput.value = stateTools.GAME_AUTOMATION.defaultSeed;
 
   function syncVisualControls(state) {
     if (!state || visualControlsDirty) {
@@ -107,6 +111,14 @@
     const normalizedState = stateTools.normalizeState(state);
     modeSelect.value = normalizedState.displayMode;
     outlineSelect.value = normalizedState.outlineEffectMode;
+  }
+
+  function syncSeedControl(state) {
+    if (!state || seedControlDirty) {
+      return;
+    }
+
+    seedInput.value = stateTools.normalizeGameSeed(state.gameSeed);
   }
 
   function formatRemainingTime(state) {
@@ -182,6 +194,7 @@
       try {
         const state = JSON.parse(event.data);
         syncVisualControls(state);
+        syncSeedControl(state);
         updateStatus(state);
       } catch (error) {
         console.error("Invalid controller state", error);
@@ -195,6 +208,7 @@
     postJson("/api/game/start", {
       displayMode: modeSelect.value,
       durationSeconds: Number(gameTimeInput.value),
+      gameSeed: seedInput.value,
       mode: gameModeSelect.value,
       outlineEffectMode: outlineSelect.value,
       spawnIntervalSeconds: Number(spawnRateInput.value),
@@ -219,6 +233,14 @@
     }).finally(() => {
       visualControlsDirty = false;
     });
+  });
+
+  seedInput.addEventListener("focus", () => {
+    seedControlDirty = true;
+  });
+  seedInput.addEventListener("blur", () => {
+    seedInput.value = stateTools.normalizeGameSeed(seedInput.value);
+    seedControlDirty = false;
   });
 
   const leftMoveHold = controls.createMoveHold(leftButton, () => {

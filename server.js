@@ -14,6 +14,7 @@ const {
   clampPowerLevel,
   clampSpawnIntervalMs,
   normalizeDisplayMode,
+  normalizeGameSeed,
   normalizeGameRunMode,
   normalizeInputForces,
   normalizeOutlineEffectMode,
@@ -42,6 +43,7 @@ let playerForces = { left: 0, right: 0 };
 let pendingPlayerForces = { left: 0, right: 0 };
 let playerImpulses = [];
 let lastPlayerMoveAt = 0;
+let enemySpawnIndex = 0;
 let autoGame = null;
 let manualGameActive = false;
 const chargingClients = new Set();
@@ -255,6 +257,7 @@ function resetStateTo(nextState) {
   resetPowerInput();
   manualGameActive = false;
   nextEnemyId = 1;
+  enemySpawnIndex = 0;
   setState(nextState);
 }
 
@@ -265,9 +268,11 @@ function resetState() {
 function resetGameState(visualSettings = {}) {
   const displayMode = normalizeDisplayMode(visualSettings.displayMode ?? state.displayMode);
   const outlineEffectMode = normalizeOutlineEffectMode(visualSettings.outlineEffectMode ?? state.outlineEffectMode);
+  const gameSeed = normalizeGameSeed(visualSettings.gameSeed ?? state.gameSeed);
   resetStateTo({
     ...DEFAULT_STATE,
     displayMode,
+    gameSeed,
     outlineEffectMode,
   });
 }
@@ -383,8 +388,9 @@ function startGame(config = {}) {
   const spawnIntervalMs = clampSpawnIntervalMs(config.spawnIntervalMs);
   const displayMode = normalizeDisplayMode(config.displayMode ?? state.displayMode);
   const outlineEffectMode = normalizeOutlineEffectMode(config.outlineEffectMode ?? state.outlineEffectMode);
+  const gameSeed = normalizeGameSeed(config.gameSeed ?? state.gameSeed);
 
-  resetGameState({ displayMode, outlineEffectMode });
+  resetGameState({ displayMode, gameSeed, outlineEffectMode });
   updateState({ gameStarting: true, running: false });
   gameStartTimer = setTimeout(() => {
     gameStartTimer = null;
@@ -449,6 +455,36 @@ function legalSpawnStarts() {
   return starts;
 }
 
+function hashToUint32(value) {
+  let hash = 2166136261;
+  const text = String(value);
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function seededUint32(seed, spawnIndex, attempt) {
+  let value = hashToUint32(`${seed}:${spawnIndex}:${attempt}`);
+  value += 0x6D2B79F5;
+  value = Math.imul(value ^ (value >>> 15), value | 1);
+  value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+  return (value ^ (value >>> 14)) >>> 0;
+}
+
+function seededSpawnStart(starts) {
+  const maxStart = GAME.playfieldSlots - GAME.enemyWidth;
+  const legalStarts = new Set(starts);
+  for (let attempt = 0; attempt <= maxStart; attempt += 1) {
+    const candidate = seededUint32(state.gameSeed, enemySpawnIndex, attempt) % (maxStart + 1);
+    if (legalStarts.has(candidate)) {
+      return candidate;
+    }
+  }
+  return starts[0];
+}
+
 function removeShotEnemies(enemyIds) {
   const idSet = new Set(enemyIds);
   const enemies = state.enemies.filter((enemy) => !(enemy.shot && idSet.has(enemy.id)));
@@ -483,9 +519,11 @@ function spawnEnemy(requestedStartValue) {
   }
 
   const requestedStart = Math.round(Number(requestedStartValue));
-  const start = starts.includes(requestedStart)
-    ? requestedStart
-    : starts[Math.floor(Math.random() * starts.length)];
+  const hasRequestedStart = starts.includes(requestedStart);
+  const start = hasRequestedStart ? requestedStart : seededSpawnStart(starts);
+  if (!hasRequestedStart) {
+    enemySpawnIndex += 1;
+  }
   const enemies = [
     ...state.enemies,
     { id: String(nextEnemyId), start, distance: GAME.maxDistance },
@@ -737,6 +775,7 @@ function normalizeStartGameBody(body = {}) {
   return {
     displayMode: body.displayMode,
     durationMs,
+    gameSeed: body.gameSeed,
     mode: body.mode,
     outlineEffectMode: body.outlineEffectMode,
     spawnIntervalMs,

@@ -52,8 +52,10 @@
   const GAME_AUTOMATION = Object.freeze({
     defaultDurationMs: 120000,
     defaultMode: GAME_RUN_MODES.AUTO,
+    defaultSeed: "1",
     defaultSpawnIntervalMs: 7000,
     maxDurationMs: 10 * 60 * 1000,
+    maxSeedLength: 64,
     maxSpawnIntervalMs: 15000,
     minDurationMs: 5000,
     minSpawnIntervalMs: 500,
@@ -67,6 +69,7 @@
     displayMode: DISPLAY_MODES.TARGET,
     outlineEffectMode: OUTLINE_EFFECT_MODES.SAME,
     inputForces: { left: 0, right: 0 },
+    gameSeed: GAME_AUTOMATION.defaultSeed,
     gameStarting: false,
     autoEndsAt: 0,
     running: false,
@@ -93,6 +96,7 @@
       displayMode: normalizeDisplayMode(value.displayMode ?? DEFAULT_STATE.displayMode),
       outlineEffectMode: normalizeOutlineEffectMode(value.outlineEffectMode ?? DEFAULT_STATE.outlineEffectMode),
       inputForces: normalizeInputForces(value.inputForces ?? DEFAULT_STATE.inputForces),
+      gameSeed: normalizeGameSeed(value.gameSeed ?? DEFAULT_STATE.gameSeed),
       gameStarting: Boolean(value.gameStarting),
       autoEndsAt: normalizeTimestamp(value.autoEndsAt),
       running: Boolean(value.running),
@@ -134,6 +138,11 @@
 
   function normalizeGameRunMode(value) {
     return value === GAME_RUN_MODES.AUTO ? GAME_RUN_MODES.AUTO : GAME_RUN_MODES.MANUAL;
+  }
+
+  function normalizeGameSeed(value) {
+    const seed = String(value ?? "").trim();
+    return (seed || GAME_AUTOMATION.defaultSeed).slice(0, GAME_AUTOMATION.maxSeedLength);
   }
 
   function clampGameDurationMs(value) {
@@ -216,6 +225,7 @@
     clampSpawnIntervalMs,
     normalizeInputForces,
     normalizeDisplayMode,
+    normalizeGameSeed,
     normalizeGameRunMode,
     normalizeOutlineEffectMode,
     normalizeState,
