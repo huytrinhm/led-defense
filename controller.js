@@ -23,6 +23,7 @@
   let visualControlsDirty = false;
   let seedControlDirty = false;
   let latestStatusState = null;
+  let serverClockOffsetMs = 0;
   let statusTimer = null;
 
   if (
@@ -121,6 +122,17 @@
     seedInput.value = stateTools.normalizeGameSeed(state.gameSeed);
   }
 
+  function syncServerClock(state) {
+    const serverNow = Number(state?.serverNow);
+    if (Number.isFinite(serverNow) && serverNow > 0) {
+      serverClockOffsetMs = serverNow - Date.now();
+    }
+  }
+
+  function serverNow() {
+    return Date.now() + serverClockOffsetMs;
+  }
+
   function formatRemainingTime(state) {
     if (state.gameOver) {
       return "--";
@@ -138,7 +150,7 @@
       return "Manual";
     }
 
-    const remainingMs = Math.max(0, state.autoEndsAt - Date.now());
+    const remainingMs = Math.max(0, state.autoEndsAt - serverNow());
     const remainingSeconds = Math.floor(remainingMs / 1000);
     const minutes = Math.floor(remainingSeconds / 60);
     const seconds = remainingSeconds % 60;
@@ -169,6 +181,7 @@
   }
 
   function updateStatus(state) {
+    syncServerClock(state);
     latestStatusState = {
       ...stateTools.normalizeState(state),
       connectedDisplayCount: state.connectedDisplayCount,

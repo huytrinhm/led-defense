@@ -118,6 +118,7 @@ function statePayload() {
   return {
     ...state,
     connectedDisplayCount: connectedDisplayCount(),
+    serverNow: Date.now(),
   };
 }
 

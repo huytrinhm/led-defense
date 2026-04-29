@@ -1571,7 +1571,7 @@
       return null;
     }
 
-    return Math.max(0, Math.ceil((displayState.autoEndsAt - Date.now()) / 1000));
+    return Math.max(0, Math.floor((displayState.autoEndsAt - currentServerTime()) / 1000));
   }
 
   function drawAutoCountdown(context, displayState) {
@@ -1966,6 +1966,17 @@
     return STATE_TOOLS.POWER?.maxLevel ?? STATE_TOOLS.POWER_LEVELS ?? LAYOUT.powerColumn.rows;
   }
 
+  function syncServerClock(state) {
+    const serverNow = Number(state?.serverNow);
+    if (Number.isFinite(serverNow) && serverNow > 0) {
+      serverClockOffsetMs = serverNow - Date.now();
+    }
+  }
+
+  function currentServerTime() {
+    return Date.now() + serverClockOffsetMs;
+  }
+
   function pulseTargetShootBlink() {
     targetShootBlinkUntil = Date.now() + SHOOT_TARGET_BLINK_MS;
     if (targetShootBlinkTimer) {
@@ -2073,6 +2084,7 @@
   }
 
   function renderDisplay(nextState) {
+    syncServerClock(nextState);
     const nextDisplayState = STATE_TOOLS.normalizeState(nextState);
     const nextStateKey = JSON.stringify(nextDisplayState);
     if (nextStateKey === lastRenderedStateKey) {
@@ -2200,6 +2212,7 @@
   }
 
   let displayState = STATE_TOOLS.normalizeState();
+  let serverClockOffsetMs = 0;
   let blinkOn = true;
   let blinkTimer = null;
   let blinkTimerDelay = 0;
