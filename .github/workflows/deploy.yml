@@ -1,0 +1,90 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to droplet
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      APP_DIR: /root/led_defense
+      SERVICE_NAME: led-defense.service
+      SSH_PORT: ${{ secrets.DROPLET_PORT || '22' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Check JavaScript syntax
+        run: npm run check
+
+      - name: Validate deployment secrets
+        run: |
+          test -n "${{ secrets.DROPLET_HOST }}"
+          test -n "${{ secrets.DROPLET_USER }}"
+          test -n "${{ secrets.DROPLET_SSH_KEY }}"
+
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DROPLET_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$SSH_PORT" -H "${{ secrets.DROPLET_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Create deploy archive
+        run: |
+          git archive --format=tar.gz --output=/tmp/led-defense.tar.gz "$GITHUB_SHA"
+
+      - name: Upload archive
+        run: |
+          scp -i ~/.ssh/deploy_key -P "$SSH_PORT" /tmp/led-defense.tar.gz \
+            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:/tmp/led-defense-${GITHUB_SHA}.tar.gz"
+
+      - name: Install and restart service
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
+            "APP_DIR='$APP_DIR' SERVICE_NAME='$SERVICE_NAME' RELEASE_SHA='$GITHUB_SHA' bash -s" <<'EOF'
+          set -euo pipefail
+
+          archive="/tmp/led-defense-${RELEASE_SHA}.tar.gz"
+          release_dir="${APP_DIR}.release-${RELEASE_SHA}"
+          previous_dir="${APP_DIR}.previous"
+
+          rm -rf "$release_dir"
+          mkdir -p "$release_dir"
+          tar -xzf "$archive" -C "$release_dir"
+          rm -f "$archive"
+
+          cd "$release_dir"
+          if [ -f package-lock.json ]; then
+            npm ci --omit=dev
+          elif [ -f package.json ]; then
+            npm install --omit=dev
+          fi
+          npm run check
+
+          rm -rf "$previous_dir"
+          if [ -d "$APP_DIR" ]; then
+            mv "$APP_DIR" "$previous_dir"
+          fi
+          mv "$release_dir" "$APP_DIR"
+
+          systemctl restart "$SERVICE_NAME"
+          systemctl is-active --quiet "$SERVICE_NAME"
+          EOF

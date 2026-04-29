@@ -1,2 +1,8 @@
 .codex
 .playwright-mcp/
+node_modules/
+.env
+npm-debug.log*
+id_deploy
+id_deploy.pub
+sample.png
