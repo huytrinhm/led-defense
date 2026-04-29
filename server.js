@@ -5,6 +5,7 @@ const http = require("http");
 const path = require("path");
 const {
   DEFAULT_STATE,
+  DISPLAY_MODES,
   GAME,
   GAME_AUTOMATION,
   GAME_RUN_MODES,
@@ -687,6 +688,10 @@ function playerForceMagnitude(netForce) {
   return Math.min(maxPlayerMovePerStep(), Math.max(1, Math.abs(netForce) * playerMoveUnitsPerTap()));
 }
 
+function controlDirectionMultiplier() {
+  return state.displayMode === DISPLAY_MODES.FOV_REVERSED ? -1 : 1;
+}
+
 function hasPendingPlayerForces() {
   return pendingPlayerForces.left + pendingPlayerForces.right > 0;
 }
@@ -728,15 +733,16 @@ function resolvePlayerMotion({ immediate = false } = {}) {
 
   const { left, right } = pendingPlayerForces;
   pendingPlayerForces = { left: 0, right: 0 };
-  const netForce = right - left;
+  const rawNetForce = right - left;
+  const movementNetForce = rawNetForce * controlDirectionMultiplier();
 
-  if (netForce === 0) {
+  if (rawNetForce === 0) {
     stopMovementIfIdle(activeForceCount);
     publishPlayerForces();
     return;
   }
 
-  const playerStart = nextPlayerStart(Math.sign(netForce) * playerForceMagnitude(netForce));
+  const playerStart = nextPlayerStart(Math.sign(movementNetForce) * playerForceMagnitude(rawNetForce));
   lastPlayerMoveAt = now;
   updateState({
     inputForces: normalizeInputForces(playerForces),

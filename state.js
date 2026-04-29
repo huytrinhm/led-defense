@@ -39,6 +39,7 @@
   const DISPLAY_MODES = Object.freeze({
     TARGET: "target",
     FOV: "fov",
+    FOV_REVERSED: "fov-reversed",
   });
   const OUTLINE_EFFECT_MODES = Object.freeze({
     NONE: "none",
@@ -126,7 +127,10 @@
   }
 
   function normalizeDisplayMode(value) {
-    return value === DISPLAY_MODES.FOV ? DISPLAY_MODES.FOV : DISPLAY_MODES.TARGET;
+    if (value === DISPLAY_MODES.FOV || value === DISPLAY_MODES.FOV_REVERSED) {
+      return value;
+    }
+    return DISPLAY_MODES.TARGET;
   }
 
   function normalizeOutlineEffectMode(value) {

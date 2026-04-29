@@ -3,6 +3,7 @@
 
   const STAGE = Object.freeze({ width: 1600, height: 900, aspect: 16 / 9 });
   const MAX_DEVICE_PIXEL_RATIO = 2;
+  const MAX_SPRITE_PIXEL_RATIO = 3;
   const STATIC_PULSE = 1.35;
   const OUTLINE_DOT_SPACING = 19.4;
   const OUTLINE_WAVE_COUNT = 4;
@@ -133,7 +134,7 @@
   });
 
   const STATE_TOOLS = window.LedDefenseState ?? Object.freeze({
-    DISPLAY_MODES: { TARGET: "target", FOV: "fov" },
+    DISPLAY_MODES: { TARGET: "target", FOV: "fov", FOV_REVERSED: "fov-reversed" },
     OUTLINE_EFFECT_MODES: { NONE: "none", SAME: "same", REVERSE: "reverse" },
     GAME: {
       displayPadding: 0,
@@ -160,7 +161,7 @@
       powerCharging: Boolean(value.powerCharging),
       enemies: Array.isArray(value.enemies) ? value.enemies : [],
       playerStart: Math.max(0, Math.min(84, Math.round(Number(value.playerStart ?? 42)))),
-      displayMode: value.displayMode === "fov" ? "fov" : "target",
+      displayMode: value.displayMode === "fov" || value.displayMode === "fov-reversed" ? value.displayMode : "target",
       outlineEffectMode: ["none", "reverse"].includes(value.outlineEffectMode) ? value.outlineEffectMode : "same",
       inputForces: {
         left: Math.max(0, Math.round(Number(value.inputForces?.left ?? 0))),
@@ -618,13 +619,19 @@
     }
 
     draw(context, pulse, stateOverride = null) {
-      const sprite = dotSprite(this, stateOverride ?? this.state);
+      const sprite = dotSprite(this, stateOverride ?? this.state, renderScaleForContext(context));
       if (!sprite) {
         return;
       }
 
       context.globalCompositeOperation = "lighter";
-      context.drawImage(sprite.canvas, this.x - sprite.center, this.y - sprite.center);
+      context.drawImage(
+        sprite.canvas,
+        this.x - sprite.center,
+        this.y - sprite.center,
+        sprite.size,
+        sprite.size
+      );
     }
   }
 
@@ -674,6 +681,7 @@
       const shimmer = 0.94 + Math.sin(pulse) * 0.06;
       const alpha = state.alpha * shimmer;
       const glow = state.glow * shimmer;
+      const blurScale = renderScaleForContext(context);
 
       context.save();
       context.globalCompositeOperation = "lighter";
@@ -683,13 +691,13 @@
       context.lineWidth = this.lineWidth * 1.35;
       context.globalAlpha = alpha * 0.26;
       context.shadowColor = this.glowColor;
-      context.shadowBlur = this.lineWidth * 4.8 * glow;
+      context.shadowBlur = this.lineWidth * 4.8 * glow * blurScale;
       drawStrokePaths(context, this.paths);
 
       context.strokeStyle = this.color;
       context.lineWidth = this.lineWidth;
       context.globalAlpha = alpha;
-      context.shadowBlur = this.lineWidth * 1.6 * glow;
+      context.shadowBlur = this.lineWidth * 1.6 * glow * blurScale;
       drawStrokePaths(context, this.paths);
       context.restore();
     }
@@ -718,17 +726,36 @@
     return new LedDot(x, y, options);
   }
 
-  function dotSprite(source, stateName) {
+  function renderScaleForContext(context) {
+    const transform = context.getTransform?.();
+    if (!transform) {
+      return 1;
+    }
+
+    const scale = Math.max(
+      Math.hypot(transform.a, transform.b),
+      Math.hypot(transform.c, transform.d)
+    );
+    return Number.isFinite(scale) && scale > 0 ? scale : 1;
+  }
+
+  function spritePixelRatioForScale(scale) {
+    return Math.max(1, Math.min(MAX_SPRITE_PIXEL_RATIO, Math.ceil(scale * 4) / 4));
+  }
+
+  function dotSprite(source, stateName, renderScale = 1) {
     const state = STATES[stateName] ?? STATES.level4;
     if (state.alpha <= 0) {
       return null;
     }
 
+    const pixelRatio = spritePixelRatioForScale(renderScale);
     const key = [
       source.radius.toFixed(3),
       source.color,
       source.glowColor,
       stateName,
+      pixelRatio.toFixed(2),
     ].join("|");
     const cached = dotSpriteCache.get(key);
     if (cached) {
@@ -738,22 +765,26 @@
     const radius = source.radius;
     const center = Math.ceil(radius * (8 + state.glow * 2));
     const size = center * 2;
-    const spriteCanvas = createRenderCanvas(size, size);
+    const spriteCanvas = createRenderCanvas(
+      Math.max(1, Math.ceil(size * pixelRatio)),
+      Math.max(1, Math.ceil(size * pixelRatio))
+    );
     const spriteContext = spriteCanvas.getContext("2d");
     const alpha = state.alpha;
     const glow = state.glow;
 
+    spriteContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     spriteContext.globalCompositeOperation = "lighter";
     spriteContext.globalAlpha = alpha * 0.32;
     spriteContext.fillStyle = source.glowColor;
     spriteContext.shadowColor = source.glowColor;
-    spriteContext.shadowBlur = radius * 5.8 * glow;
+    spriteContext.shadowBlur = radius * 5.8 * glow * pixelRatio;
     spriteContext.beginPath();
     spriteContext.arc(center, center, radius * 1.35, 0, Math.PI * 2);
     spriteContext.fill();
 
     spriteContext.globalAlpha = alpha;
-    spriteContext.shadowBlur = radius * 2.6 * glow;
+    spriteContext.shadowBlur = radius * 2.6 * glow * pixelRatio;
     spriteContext.fillStyle = source.color;
     spriteContext.beginPath();
     spriteContext.arc(center, center, radius, 0, Math.PI * 2);
@@ -766,7 +797,7 @@
     spriteContext.arc(center - radius * 0.22, center - radius * 0.24, radius * 0.28, 0, Math.PI * 2);
     spriteContext.fill();
 
-    const sprite = { canvas: spriteCanvas, center };
+    const sprite = { canvas: spriteCanvas, center, size };
     dotSpriteCache.set(key, sprite);
     return sprite;
   }
@@ -1339,6 +1370,11 @@
     return Math.floor((STATE_TOOLS.GAME.displaySlots - STATE_TOOLS.GAME.playerWidth) / 2);
   }
 
+  function isFovDisplayMode(displayMode) {
+    return displayMode === STATE_TOOLS.DISPLAY_MODES.FOV
+      || displayMode === STATE_TOOLS.DISPLAY_MODES.FOV_REVERSED;
+  }
+
   function slotCenterX(slot) {
     const minSlot = 0;
     const maxSlot = LANE_SLOT_XS.length - 1;
@@ -1452,15 +1488,19 @@
 
   function targetDisplaySlot(displayState) {
     const playerCenterOffset = (STATE_TOOLS.GAME.playerWidth - 1) / 2;
-    if (displayState.displayMode === STATE_TOOLS.DISPLAY_MODES.FOV) {
+    if (isFovDisplayMode(displayState.displayMode)) {
       return centerStartDisplaySlot() + playerCenterOffset;
     }
 
     return displaySlotForField(displayState.playerStart) + playerCenterOffset;
   }
 
+  function fovDisplaySlotForFieldSlot(displayState, fieldSlot) {
+    return centerStartDisplaySlot() + fieldSlot - displayState.playerStart;
+  }
+
   function fieldSlotForDisplaySlot(displayState, displaySlot) {
-    if (displayState.displayMode === STATE_TOOLS.DISPLAY_MODES.FOV) {
+    if (isFovDisplayMode(displayState.displayMode)) {
       return displayState.playerStart + displaySlot - centerStartDisplaySlot();
     }
 
@@ -1468,32 +1508,37 @@
   }
 
   function fovWallAtSlot(displayState, displaySlot) {
-    if (displayState.displayMode !== STATE_TOOLS.DISPLAY_MODES.FOV) {
+    if (!isFovDisplayMode(displayState.displayMode)) {
       return false;
     }
 
     const wallPadding = STATE_TOOLS.GAME.fovWallPadding ?? 0;
-    const leftWallSlot = centerStartDisplaySlot() - displayState.playerStart - 1 - wallPadding;
-    const rightWallSlot = centerStartDisplaySlot() + STATE_TOOLS.GAME.playfieldSlots - displayState.playerStart + wallPadding;
+    const leftWallSlot = fovDisplaySlotForFieldSlot(displayState, -1 - wallPadding);
+    const rightWallSlot = fovDisplaySlotForFieldSlot(displayState, STATE_TOOLS.GAME.playfieldSlots + wallPadding);
     return displaySlot === leftWallSlot || displaySlot === rightWallSlot;
   }
 
   function fovOffscreenDirection(displayState) {
-    if (displayState.displayMode !== STATE_TOOLS.DISPLAY_MODES.FOV) {
+    if (!isFovDisplayMode(displayState.displayMode)) {
       return { left: false, right: false };
     }
 
-    const leftLimit = 1;
-    const rightLimit = STATE_TOOLS.GAME.displaySlots - 2;
-    const startSlot = centerStartDisplaySlot();
+    const leftVisibleSlot = 1;
+    const rightVisibleSlot = LANE_SLOT_XS.length - 2;
     const enemyWidth = STATE_TOOLS.GAME.enemyWidth;
     const direction = { left: false, right: false };
 
     for (const enemy of displayState.enemies) {
-      const enemyLeft = startSlot + enemy.start - displayState.playerStart;
-      const enemyRight = enemyLeft + enemyWidth - 1;
-      if (enemyRight < leftLimit) direction.left = true;
-      if (enemyLeft > rightLimit) direction.right = true;
+      if (enemy.shot) {
+        continue;
+      }
+
+      const enemyStartSlot = fovDisplaySlotForFieldSlot(displayState, enemy.start);
+      const enemyEndSlot = fovDisplaySlotForFieldSlot(displayState, enemy.start + enemyWidth - 1);
+      const enemyLeft = Math.min(enemyStartSlot, enemyEndSlot);
+      const enemyRight = Math.max(enemyStartSlot, enemyEndSlot);
+      if (enemyLeft < leftVisibleSlot) direction.left = true;
+      if (enemyRight > rightVisibleSlot) direction.right = true;
     }
 
     return direction;
@@ -1506,15 +1551,17 @@
 
     for (let slot = 0; slot < LANE_SLOT_XS.length; slot += 1) {
       const x = LANE_SLOT_XS[slot];
+      const offscreenMarker = isFovDisplayMode(displayState.displayMode)
+        && ((slot === 0 && offscreen.left) || (slot === LANE_SLOT_XS.length - 1 && offscreen.right));
+      const reservedFovEdge = isFovDisplayMode(displayState.displayMode)
+        && (slot === 0 || slot === LANE_SLOT_XS.length - 1);
       const fieldSlot = fieldSlotForDisplaySlot(displayState, slot);
-      const enemy = fieldSlot >= 0 && fieldSlot < STATE_TOOLS.GAME.playfieldSlots
+      const enemy = !reservedFovEdge && fieldSlot >= 0 && fieldSlot < STATE_TOOLS.GAME.playfieldSlots
         ? enemyAtSlot(displayState.enemies, fieldSlot)
         : null;
-      const wall = fovWallAtSlot(displayState, slot);
-      const offscreenMarker = displayState.displayMode === STATE_TOOLS.DISPLAY_MODES.FOV
-        && ((slot === 0 && offscreen.left) || (slot === LANE_SLOT_XS.length - 1 && offscreen.right));
+      const wall = !offscreenMarker && fovWallAtSlot(displayState, slot);
       const activeEnemy = Boolean(enemy || offscreenMarker);
-      const enemyColor = enemyLedColor(enemy);
+      const enemyColor = offscreenMarker ? COLORS.red : enemyLedColor(enemy);
       const dotColor = wall ? COLORS.wall : (activeEnemy ? enemyColor : COLORS.laneOff);
       const dotGlow = wall ? COLORS.wall : (activeEnemy ? enemyColor : COLORS.laneOff);
       const gameOverEnemyLedState = enemy ? gameOverEnemyState(displayState, enemy) : null;
@@ -1523,7 +1570,7 @@
         glowColor: dotGlow,
         radius: activeEnemy || wall ? 3.25 : 2.55,
         state: gameOverEnemyLedState
-          ?? (wall ? "level10" : (activeEnemy ? (enemy ? enemyLedState(enemy) : (blinkOn ? "level10" : "level3")) : "level2")),
+          ?? (offscreenMarker ? (blinkOn ? "level10" : "off") : (wall ? "level10" : (activeEnemy ? enemyLedState(enemy) : "level2"))),
         phase: slot * 0.08,
       }));
     }
@@ -1583,13 +1630,14 @@
     const minutes = Math.floor(seconds / 60);
     const remainder = seconds % 60;
     const label = `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+    const blurScale = renderScaleForContext(context);
 
     context.save();
     context.textAlign = "right";
     context.textBaseline = "middle";
     context.font = "700 34px system-ui, sans-serif";
     context.shadowColor = COLORS.blue;
-    context.shadowBlur = 18;
+    context.shadowBlur = 18 * blurScale;
     context.fillStyle = "#dbe9ff";
     context.fillText(label, LAYOUT.timer.x, LAYOUT.timer.y);
     context.shadowBlur = 0;
@@ -1686,28 +1734,47 @@
     return renderCanvas;
   }
 
-  function createStageCache(scene) {
-    const renderCanvas = createRenderCanvas(STAGE.width, STAGE.height);
+  function stageRenderScale() {
+    const metrics = getLetterboxMetrics(canvas.width || STAGE.width, canvas.height || STAGE.height);
+    return Math.max(0.1, metrics.scale);
+  }
+
+  function createStageCache(scene, renderScale = stageRenderScale()) {
+    const width = Math.max(1, Math.round(STAGE.width * renderScale));
+    const height = Math.max(1, Math.round(STAGE.height * renderScale));
+    const scaleX = width / STAGE.width;
+    const scaleY = height / STAGE.height;
+    const renderCanvas = createRenderCanvas(width, height);
     const renderContext = renderCanvas.getContext("2d", { alpha: false });
 
+    renderContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
     scene.draw(renderContext, STATIC_PULSE);
 
-    return renderCanvas;
+    return { canvas: renderCanvas, scaleX, scaleY };
+  }
+
+  function stageCacheCanvas(cache) {
+    return cache?.canvas ?? cache;
   }
 
   function drawCachedStage(context, cache) {
     const viewportWidth = canvas.width;
     const viewportHeight = canvas.height;
     const metrics = getLetterboxMetrics(viewportWidth, viewportHeight);
+    const cacheCanvas = stageCacheCanvas(cache);
+    const isNativeSize = Math.abs(cacheCanvas.width - metrics.stageWidth) < 0.01
+      && Math.abs(cacheCanvas.height - metrics.stageHeight) < 0.01;
 
     context.globalCompositeOperation = "source-over";
     context.globalAlpha = 1;
     context.clearRect(0, 0, viewportWidth, viewportHeight);
     context.fillStyle = "#000";
     context.fillRect(0, 0, viewportWidth, viewportHeight);
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = "high";
-    context.drawImage(cache, metrics.offsetX, metrics.offsetY, metrics.stageWidth, metrics.stageHeight);
+    context.imageSmoothingEnabled = !isNativeSize;
+    if (context.imageSmoothingEnabled) {
+      context.imageSmoothingQuality = "high";
+    }
+    context.drawImage(cacheCanvas, metrics.offsetX, metrics.offsetY, metrics.stageWidth, metrics.stageHeight);
   }
 
   function scaledStageRect(rect) {
@@ -1744,24 +1811,52 @@
     return { x: left, y: top, width: right - left, height: bottom - top };
   }
 
+  function cacheSourceRectForStageRect(cache, rect) {
+    const cacheCanvas = stageCacheCanvas(cache);
+    const scaleX = cache?.scaleX ?? 1;
+    const scaleY = cache?.scaleY ?? 1;
+    const sx = Math.max(0, Math.floor(rect.x * scaleX));
+    const sy = Math.max(0, Math.floor(rect.y * scaleY));
+    const right = Math.min(cacheCanvas.width, Math.ceil((rect.x + rect.width) * scaleX));
+    const bottom = Math.min(cacheCanvas.height, Math.ceil((rect.y + rect.height) * scaleY));
+    return {
+      sx,
+      sy,
+      sw: Math.max(1, right - sx),
+      sh: Math.max(1, bottom - sy),
+      canvas: cacheCanvas,
+      stageRect: {
+        x: sx / scaleX,
+        y: sy / scaleY,
+        width: Math.max(1, right - sx) / scaleX,
+        height: Math.max(1, bottom - sy) / scaleY,
+      },
+    };
+  }
+
   function restoreStageRect(context, rect) {
     const expandedRect = expandStageRect(rect, DIRTY_REPAINT_PADDING);
-    const scaledRect = scaledStageRect(expandedRect);
+    const sourceRect = cacheSourceRectForStageRect(stageCache, expandedRect);
+    const scaledRect = scaledStageRect(sourceRect.stageRect);
+    const isNativeSize = Math.abs(sourceRect.sw - scaledRect.dw) < 0.01
+      && Math.abs(sourceRect.sh - scaledRect.dh) < 0.01;
 
     context.save();
     context.globalCompositeOperation = "source-over";
     context.globalAlpha = 1;
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = "high";
+    context.imageSmoothingEnabled = !isNativeSize;
+    if (context.imageSmoothingEnabled) {
+      context.imageSmoothingQuality = "high";
+    }
     context.beginPath();
     context.rect(scaledRect.dx, scaledRect.dy, scaledRect.dw, scaledRect.dh);
     context.clip();
     context.drawImage(
-      stageCache,
-      scaledRect.sx,
-      scaledRect.sy,
-      scaledRect.sw,
-      scaledRect.sh,
+      sourceRect.canvas,
+      sourceRect.sx,
+      sourceRect.sy,
+      sourceRect.sw,
+      sourceRect.sh,
       scaledRect.dx,
       scaledRect.dy,
       scaledRect.dw,
@@ -1794,6 +1889,17 @@
     });
   }
 
+  function targetDirtyRect() {
+    const { width, height, y } = DIRTY_RECTS.target;
+    const targetX = slotCenterX(targetDisplaySlot(displayState));
+    return {
+      x: Math.max(0, Math.min(STAGE.width - width, targetX - width / 2)),
+      y,
+      width,
+      height,
+    };
+  }
+
   function shouldDrawOutlineOverlay() {
     return !displayState.gameOver;
   }
@@ -1809,7 +1915,18 @@
     });
   }
 
+  function rebuildStageCache() {
+    stageCache = createStageCache(createScene(displayState, {
+      skipOutline: shouldDrawOutlineOverlay(),
+      skipTargetOuter: shouldAnimateTargetArc(),
+    }));
+    stageCacheDirty = false;
+  }
+
   function drawDisplayFrameNow() {
+    if (!stageCache || stageCacheDirty) {
+      rebuildStageCache();
+    }
     drawCachedStage(ctx, stageCache);
     drawOutlineOverlay(ctx);
     drawTargetArcOverlay(ctx);
@@ -1821,12 +1938,17 @@
       rects.push(DIRTY_RECTS.outline);
     }
     if (shouldAnimateTargetArc()) {
-      rects.push(DIRTY_RECTS.target);
+      rects.push(targetDirtyRect());
     }
     return unionStageRects(rects);
   }
 
   function drawAnimatedOverlayFrameNow() {
+    if (!stageCache || stageCacheDirty) {
+      drawDisplayFrameNow();
+      return;
+    }
+
     const dirtyRect = animatedDirtyRect();
     if (!dirtyRect) {
       return;
@@ -1837,9 +1959,18 @@
     drawTargetArcOverlay(ctx);
   }
 
-  function scheduleCanvasFrame(callback) {
-    if (document.visibilityState === "hidden" || displayFrameRequest) {
+  function scheduleCanvasFrame(callback, options = {}) {
+    if (document.visibilityState === "hidden") {
       return;
+    }
+
+    if (displayFrameRequest) {
+      if (!options.replace) {
+        return;
+      }
+
+      window.cancelAnimationFrame(displayFrameRequest);
+      displayFrameRequest = null;
     }
 
     displayFrameRequest = window.requestAnimationFrame(() => {
@@ -1849,7 +1980,7 @@
   }
 
   function drawDisplayFrame() {
-    scheduleCanvasFrame(drawDisplayFrameNow);
+    scheduleCanvasFrame(drawDisplayFrameNow, { replace: true });
   }
 
   function drawAnimatedOverlayFrame() {
@@ -1869,14 +2000,11 @@
     canvas.style.width = `${window.innerWidth}px`;
     canvas.style.height = `${window.innerHeight}px`;
 
-    drawDisplayFrame();
+    redrawDisplay();
   }
 
   function redrawDisplay() {
-    stageCache = createStageCache(createScene(displayState, {
-      skipOutline: shouldDrawOutlineOverlay(),
-      skipTargetOuter: shouldAnimateTargetArc(),
-    }));
+    stageCacheDirty = true;
     drawDisplayFrame();
   }
 
@@ -2058,7 +2186,7 @@
     const offscreen = fovOffscreenDirection(displayState);
     const needsBlink = (!displayState.gameOver && enemyOverlapsPlayer(displayState))
       || isTargetShootBlinking()
-      || (displayState.displayMode === STATE_TOOLS.DISPLAY_MODES.FOV && (offscreen.left || offscreen.right));
+      || (isFovDisplayMode(displayState.displayMode) && (offscreen.left || offscreen.right));
     const nextDelay = isTargetShootBlinking() ? 160 : 420;
 
     if (needsBlink && blinkTimer && blinkTimerDelay !== nextDelay) {
@@ -2232,10 +2360,8 @@
   let lastCanvasTapX = 0;
   let lastCanvasTapY = 0;
   const displayAudio = new DisplayAudio();
-  let stageCache = createStageCache(createScene(displayState, {
-    skipOutline: shouldDrawOutlineOverlay(),
-    skipTargetOuter: shouldAnimateTargetArc(),
-  }));
+  let stageCache = null;
+  let stageCacheDirty = true;
   let lastRenderedStateKey = JSON.stringify(displayState);
 
   window.addEventListener("resize", resize);
